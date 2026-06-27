@@ -1,10 +1,13 @@
-//! Rendered presentation of the lattice (DESIGN_BRIEF §2–§3). Feature-gated
-//! behind `render`; never compiled into the headless build.
+//! Rendered presentation of the lattice (DESIGN_BRIEF §2–§3) and the
+//! GameState → ECS sync. Feature-gated behind `render`; never compiled into the
+//! headless build.
 //!
-//! First cut: for every cell a glass shell (§3.2), an emissive steward core for
-//! occupied cells (§3.3), and a faint ghost marker for empty cells (§3.5). The
-//! §2.2 lighting rig (scaled by N/5) and a panorbit camera with Bloom + AgX
-//! tonemapping (§2.3) frame the board.
+//! The board is drawn from one persistent entity table built once at startup:
+//! every cell owns a *frame* entity (glass shell or faint ghost marker) and a
+//! *core* entity (the emissive steward sphere, hidden unless the cell is live).
+//! [`sync_board`] rewrites those entities' mesh/material/visibility from
+//! [`BoardResource`] whenever [`BoardDirty`] is set, so the screensaver driver
+//! (`screensaver.rs`) only has to flip a flag after each move.
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::Hdr;
@@ -14,8 +17,9 @@ use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::prelude::*;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
-use crate::palette;
-use ciris_game_engine_core::{Board, CellState, Coord, Steward, DEFAULT_BOARD_N};
+use crate::screensaver;
+use crate::{palette, seed_from_counter, BoardResource};
+use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
 
 /// Glass shell radius (DESIGN_BRIEF §3.1).
 const SHELL_RADIUS: f32 = 0.42;
@@ -28,19 +32,60 @@ const CORE_EMISSIVE: f32 = 0.6;
 /// Bloom-layer index for emissive cores (DESIGN_BRIEF §2.3 / §3.3).
 const BLOOM_LAYER: usize = 1;
 
-/// Build the App and run it (windowed).
+/// Shared mesh + material handles, built once at startup and cloned per cell.
+#[derive(Resource)]
+struct RenderAssets {
+    shell_mesh: Handle<Mesh>,
+    ghost_mesh: Handle<Mesh>,
+    core_mesh: Handle<Mesh>,
+    glass_mat: Handle<StandardMaterial>,
+    tempdead_mat: Handle<StandardMaterial>,
+    permadead_mat: Handle<StandardMaterial>,
+    ghost_mat: Handle<StandardMaterial>,
+    /// Emissive core material per steward slot (0..=3).
+    core_mats: [Handle<StandardMaterial>; 4],
+}
+
+/// Per-cell entity table, indexed by linear board index.
+#[derive(Resource)]
+struct CellEntities {
+    /// The shell-or-ghost frame entity for each cell.
+    frame: Vec<Entity>,
+    /// The emissive core entity for each cell (hidden unless the cell is live).
+    core: Vec<Entity>,
+}
+
+/// Set whenever the board changes; [`sync_board`] consumes it. Starts `true` so
+/// the initial all-empty board is painted on the first frame.
+#[derive(Resource)]
+pub struct BoardDirty(pub bool);
+
+/// Build the App and run it (windowed / wasm).
 pub fn run_app() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "CIRISGame".into(),
+                // wasm: bind to the <canvas id="bevy"> in the page shim and let
+                // it track the parent element (DESIGN_BRIEF §6.5).
+                canvas: Some("#bevy".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
                 ..default()
             }),
             ..default()
         }))
         .add_plugins(PanOrbitCameraPlugin)
         .insert_resource(ClearColor(palette::BONE_SRGB))
+        .insert_resource(BoardResource(GameState::new(
+            DEFAULT_BOARD_N,
+            seed_from_counter(0),
+        )))
+        .insert_resource(BoardDirty(true))
+        .insert_resource(screensaver::ScreensaverState::new())
+        .insert_resource(screensaver::AiRng::new(0))
         .add_systems(Startup, setup)
+        .add_systems(Update, (screensaver::drive, sync_board).chain())
         .run();
 }
 
@@ -55,8 +100,9 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    board: Res<BoardResource>,
 ) {
-    let n = DEFAULT_BOARD_N;
+    let n = board.0.board.n;
     // N/5 lighting-rig + camera scale factor (DESIGN_BRIEF §2.2 / §4.4).
     let scale = n as f32 / 5.0;
 
@@ -111,90 +157,114 @@ fn setup(
         ..default()
     });
 
-    // ── shared meshes + glass-shell material (DESIGN_BRIEF §3.1/§3.2) ────
-    let shell_mesh = meshes.add(Sphere::new(SHELL_RADIUS).mesh().ico(4).unwrap());
-    let core_mesh = meshes.add(Sphere::new(CORE_RADIUS).mesh().ico(3).unwrap());
-    let ghost_mesh = meshes.add(Sphere::new(GHOST_RADIUS).mesh().ico(2).unwrap());
+    // ── shared meshes + materials (DESIGN_BRIEF §3.1/§3.2/§3.6) ──────────
+    let assets = RenderAssets {
+        shell_mesh: meshes.add(Sphere::new(SHELL_RADIUS).mesh().ico(4).unwrap()),
+        ghost_mesh: meshes.add(Sphere::new(GHOST_RADIUS).mesh().ico(2).unwrap()),
+        core_mesh: meshes.add(Sphere::new(CORE_RADIUS).mesh().ico(3).unwrap()),
+        glass_mat: materials.add(glass_material()),
+        tempdead_mat: materials.add(tempdead_material()),
+        permadead_mat: materials.add(permadead_material()),
+        ghost_mat: materials.add(ghost_material()),
+        core_mats: [
+            materials.add(core_material(Steward::Sienna)),
+            materials.add(core_material(Steward::Lapis)),
+            materials.add(core_material(Steward::Verdigris)),
+            materials.add(core_material(Steward::Kaolin)),
+        ],
+    };
 
-    let shell_material = materials.add(StandardMaterial {
-        base_color: palette::BOROSILICATE_SRGB,
-        specular_transmission: 1.0,
-        ior: 1.50,
-        thickness: 0.18,
-        perceptual_roughness: 0.04,
-        attenuation_color: palette::BOROSILICATE_LINEAR,
-        attenuation_distance: 2.2,
-        reflectance: 0.5,
-        // TODO §3.2: ExtendedMaterial<StandardMaterial, RimMaterial> Fresnel rim.
-        ..default()
-    });
-
-    let ghost_material = materials.add(StandardMaterial {
-        base_color: palette::SLATE_SRGB.with_alpha(0.18),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        ..default()
-    });
-
-    // ── the board ───────────────────────────────────────────────────────
-    // Placeholder demo state: one stone per steward so all four core pigments
-    // read in this first cut. The rules system (BACKLOG #6) will own real state.
-    // TODO #6: drive cells from the BoardResource mutated by the engine.
-    let mut board = Board::new(n);
-    let demo: [(Coord, Steward); 4] = [
-        (Coord::new(2, 2, 2), Steward::Sienna),
-        (Coord::new(1, 2, 2), Steward::Lapis),
-        (Coord::new(2, 1, 2), Steward::Verdigris),
-        (Coord::new(2, 2, 1), Steward::Kaolin),
-    ];
-    for (c, s) in demo {
-        if let Some(idx) = board.index(c) {
-            board.set(idx, CellState::Live(s));
-        }
-    }
-
-    let mut core_materials: [Option<Handle<StandardMaterial>>; 4] = [None, None, None, None];
-
-    for idx in 0..board.len() {
-        let c = board.coord(idx);
-        let pos = cell_world_pos(c, n);
-
-        // Every cell gets a glass shell.
-        commands.spawn((
-            Mesh3d(shell_mesh.clone()),
-            MeshMaterial3d(shell_material.clone()),
-            Transform::from_translation(pos),
-        ));
-
-        match board.get(idx) {
-            CellState::Live(steward) => {
-                let slot = steward.slot() as usize;
-                let mat = core_materials[slot]
-                    .get_or_insert_with(|| materials.add(core_material(steward)))
-                    .clone();
-                // Cores on layers [0, 1]: PBR-shaded on layer 0, glow on layer 1
-                // (DESIGN_BRIEF §3.3).
-                commands.spawn((
-                    Mesh3d(core_mesh.clone()),
-                    MeshMaterial3d(mat),
+    // ── one persistent frame + core entity per cell ─────────────────────
+    let count = board.0.board.len();
+    let mut frame = Vec::with_capacity(count);
+    let mut core = Vec::with_capacity(count);
+    for idx in 0..count {
+        let pos = cell_world_pos(board.0.board.coord(idx), n);
+        // Frame starts as a ghost marker; sync_board paints the real state.
+        frame.push(
+            commands
+                .spawn((
+                    Mesh3d(assets.ghost_mesh.clone()),
+                    MeshMaterial3d(assets.ghost_mat.clone()),
                     Transform::from_translation(pos),
+                ))
+                .id(),
+        );
+        // Cores on layers [0, 1]: PBR-shaded on layer 0, glow on layer 1
+        // (DESIGN_BRIEF §3.3). Hidden until the cell goes live.
+        core.push(
+            commands
+                .spawn((
+                    Mesh3d(assets.core_mesh.clone()),
+                    MeshMaterial3d(assets.core_mats[0].clone()),
+                    Transform::from_translation(pos),
+                    Visibility::Hidden,
                     RenderLayers::from_layers(&[0, BLOOM_LAYER]),
-                ));
-                // TODO §3.3: Kaolin's mandatory 2px Ink rim ring.
-            }
+                ))
+                .id(),
+        );
+        // TODO §3.3: Kaolin's mandatory 2px Ink rim ring.
+    }
+
+    commands.insert_resource(assets);
+    commands.insert_resource(CellEntities { frame, core });
+}
+
+/// Rewrite the per-cell entities from the live board, when something changed.
+fn sync_board(
+    mut dirty: ResMut<BoardDirty>,
+    board: Res<BoardResource>,
+    cells: Res<CellEntities>,
+    assets: Res<RenderAssets>,
+    mut commands: Commands,
+) {
+    if !dirty.0 {
+        return;
+    }
+    let gs = &board.0;
+    for idx in 0..gs.board.len() {
+        let frame = cells.frame[idx];
+        let core = cells.core[idx];
+        match gs.board.get(idx) {
+            // Empty → faint ghost marker, core hidden (DESIGN_BRIEF §3.5).
             CellState::Empty => {
-                // TODO §3.5: replace with a bevy_polyline rhombic-dodecahedron
-                // wireframe in Slate at distance-faded alpha.
-                commands.spawn((
-                    Mesh3d(ghost_mesh.clone()),
-                    MeshMaterial3d(ghost_material.clone()),
-                    Transform::from_translation(pos),
+                commands.entity(frame).insert((
+                    Mesh3d(assets.ghost_mesh.clone()),
+                    MeshMaterial3d(assets.ghost_mat.clone()),
+                ));
+                commands.entity(core).insert(Visibility::Hidden);
+            }
+            // Live → glass shell + emissive steward core (§3.2/§3.3).
+            CellState::Live(steward) => {
+                commands.entity(frame).insert((
+                    Mesh3d(assets.shell_mesh.clone()),
+                    MeshMaterial3d(assets.glass_mat.clone()),
+                ));
+                commands.entity(core).insert((
+                    MeshMaterial3d(assets.core_mats[steward.slot() as usize].clone()),
+                    Visibility::Visible,
                 ));
             }
-            // TODO §3.6: temp-dead (black) and perma-dead (green) mist.
-            CellState::TempDead(_) | CellState::PermaDead => {}
+            // Temp-dead → darkened shell, core off (§3.6). TODO §3.6: black mist.
+            CellState::TempDead(_) => {
+                commands.entity(frame).insert((
+                    Mesh3d(assets.shell_mesh.clone()),
+                    MeshMaterial3d(assets.tempdead_mat.clone()),
+                ));
+                commands.entity(core).insert(Visibility::Hidden);
+            }
+            // Perma-dead → Verdigris-tinted shell, core off (§3.6). TODO §3.6:
+            // green mist.
+            CellState::PermaDead => {
+                commands.entity(frame).insert((
+                    Mesh3d(assets.shell_mesh.clone()),
+                    MeshMaterial3d(assets.permadead_mat.clone()),
+                ));
+                commands.entity(core).insert(Visibility::Hidden);
+            }
         }
     }
+    dirty.0 = false;
 }
 
 /// A directional light aimed at the board center from `pos`, scaled by N/5.
@@ -208,6 +278,57 @@ fn spawn_key_light(commands: &mut Commands, scale: f32, pos: Vec3, color: Color,
         },
         Transform::from_translation(pos * scale).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+}
+
+/// Glass shell (DESIGN_BRIEF §3.2).
+fn glass_material() -> StandardMaterial {
+    StandardMaterial {
+        base_color: palette::BOROSILICATE_SRGB,
+        specular_transmission: 1.0,
+        ior: 1.50,
+        thickness: 0.18,
+        perceptual_roughness: 0.04,
+        attenuation_color: palette::BOROSILICATE_LINEAR,
+        attenuation_distance: 2.2,
+        reflectance: 0.5,
+        // TODO §3.2: ExtendedMaterial<StandardMaterial, RimMaterial> Fresnel rim.
+        ..default()
+    }
+}
+
+/// Temp-dead shell: desaturated and dark, transmission killed (DESIGN_BRIEF §3.6).
+fn tempdead_material() -> StandardMaterial {
+    StandardMaterial {
+        base_color: palette::SLATE_SRGB,
+        perceptual_roughness: 0.9,
+        reflectance: 0.2,
+        ..default()
+    }
+}
+
+/// Perma-dead shell: Verdigris-tinted neutral substrate (DESIGN_BRIEF §3.6).
+fn permadead_material() -> StandardMaterial {
+    StandardMaterial {
+        base_color: palette::STEWARD_VERDIGRIS_SRGB,
+        specular_transmission: 0.3,
+        ior: 1.50,
+        thickness: 0.18,
+        perceptual_roughness: 0.25,
+        attenuation_color: palette::STEWARD_VERDIGRIS_LINEAR,
+        attenuation_distance: 1.4,
+        reflectance: 0.35,
+        ..default()
+    }
+}
+
+/// Faint ghost marker for empty cells (DESIGN_BRIEF §3.5 placeholder).
+fn ghost_material() -> StandardMaterial {
+    StandardMaterial {
+        base_color: palette::SLATE_SRGB.with_alpha(0.18),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    }
 }
 
 /// Emissive steward-core material (DESIGN_BRIEF §3.3).

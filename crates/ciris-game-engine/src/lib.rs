@@ -25,11 +25,23 @@ pub mod palette;
 #[cfg(feature = "render")]
 mod render;
 
-/// The Board, wrapped as a Bevy `Resource`. The rules system (BACKLOG #6+) will
-/// own and mutate this; render systems observe it. Available in every build
-/// because `bevy_ecs` links regardless of the render feature.
-#[derive(bevy::ecs::resource::Resource, Clone, Debug)]
-pub struct BoardResource(pub Board);
+#[cfg(feature = "render")]
+mod screensaver;
+
+/// The live game, wrapped as a Bevy `Resource`. The screensaver driver
+/// (`screensaver.rs`) advances it; the render sync system (`render.rs`) observes
+/// it. Available in every build because `bevy_ecs` links regardless of the
+/// render feature. Not `Clone`/`Debug` — `GameState` carries an RNG.
+#[derive(bevy::ecs::resource::Resource)]
+pub struct BoardResource(pub GameState);
+
+/// A 32-byte game seed derived from a `u64` counter. Deterministic and distinct
+/// per screensaver round (the counter advances on every restart).
+pub(crate) fn seed_from_counter(counter: u64) -> [u8; 32] {
+    let mut seed = [0u8; 32];
+    seed[..8].copy_from_slice(&counter.to_le_bytes());
+    seed
+}
 
 /// Build and run the CIRISGame application.
 ///
@@ -49,6 +61,9 @@ pub fn run() {
 
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-        .insert_resource(BoardResource(Board::new(DEFAULT_BOARD_N)))
+        .insert_resource(BoardResource(GameState::new(
+            DEFAULT_BOARD_N,
+            seed_from_counter(0),
+        )))
         .run();
 }
