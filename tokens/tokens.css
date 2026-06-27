@@ -1,0 +1,28 @@
+/* CIRISGame design tokens — generated from tokens.json. Do not hand-edit. */
+:root {
+  --bone: #FAF9F5;            /* Bone */
+  --linen: #E8E6DC;            /* Linen */
+  --borosilicate: #EAF2EE;            /* Borosilicate */
+  --ink: #141413;            /* Ink */
+  --slate: #5F5C55;            /* Slate */
+  --stone: #B0AEA5;            /* Stone */
+  --clay: #D97757;            /* Clay */
+  --lapisAccent: #6A9BCC;            /* Lapis */
+  --ochre: #D4A27F;            /* Ochre */
+
+  /* steward pigment cores */
+  --steward-sienna: #D97757;   /* Burnt Sienna */
+  --steward-lapis: #6A9BCC;   /* Lapis Lazuli */
+  --steward-verdigris: #788C5D;   /* Verdigris */
+  --steward-kaolin: #E8E6DC;   /* Kaolin — mandatory 2px Ink ring */
+
+  /* type scale (1x = 16px) */
+  --text-2xs: 10px;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-md: 18px;
+  --text-lg: 22px;
+  --text-xl: 32px;
+  --text-2xl: 48px;
+}
