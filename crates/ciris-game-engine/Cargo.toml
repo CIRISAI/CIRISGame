@@ -1,0 +1,81 @@
+# ciris-game-engine — the Bevy 0.19 view layer for CIRISGame.
+#
+# The deterministic rules live in `ciris-game-engine-core`; this crate re-exports
+# that API unchanged (see `lib.rs`) and adds the rendered presentation.
+#
+# Feature shape (mirrors CLAUDE.md's build commands). All rendering lives behind
+# `render`; `headless` enables NO rendering (no bevy_render / wgpu) and is what CI
+# and AI tournaments link. Cargo features are additive, so the two paths are only
+# ever built one at a time:
+#
+#   native (default)  →  windowed PBR via winit (macOS/Linux/Windows)
+#   webgpu / webgl2   →  the two wasm32-unknown-unknown artifacts
+#   headless          →  MinimalPlugins, no GPU, no window
+[package]
+name = "ciris-game-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bevy 0.19 view layer for CIRISGame: rhombic-dodecahedral lattice render over the deterministic ciris-game-engine-core."
+
+[lib]
+name = "ciris_game_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ciris-game"
+path = "src/main.rs"
+
+[dependencies]
+ciris-game-engine-core = { path = "../ciris-game-engine-core" }
+bevy = { version = "0.19", default-features = false }
+bevy_panorbit_camera = { version = "0.35", optional = true }
+
+[features]
+# Native windowed render is the default (CLAUDE.md `cargo build --release`).
+default = ["native"]
+
+# Native desktop: full render machinery + the Linux window backends + the
+# texture/post passthroughs the brief always ships with (§1).
+native = [
+    "render",
+    "bevy/multi_threaded",
+    "bevy/x11",
+    "bevy/wayland",
+    "tonemapping_luts",
+    "bloom",
+    "pbr_transmission_textures",
+]
+
+# Shared render machinery. Everything GPU-facing is gated on this feature so that
+# `headless` links none of it. Pulls in the panorbit camera dependency too.
+render = [
+    "dep:bevy_panorbit_camera",
+    "bevy/std",
+    "bevy/bevy_winit",
+    "bevy/bevy_window",
+    "bevy/bevy_render",
+    "bevy/bevy_core_pipeline",
+    "bevy/bevy_pbr",
+    "bevy/bevy_asset",
+    "bevy/bevy_log",
+    # bevy_image pulls zstd (KTX2 supercompression); pick the pure-Rust backend
+    # so the wasm artifacts build without a C toolchain.
+    "bevy/zstd_rust",
+]
+
+# The two wasm artifacts (CLAUDE.md build block). `webgpu` is primary; `webgl2`
+# is the fallback. Both carry the same texture/post passthroughs.
+webgpu = ["render", "bevy/webgpu", "tonemapping_luts", "bloom", "pbr_transmission_textures"]
+webgl2 = ["render", "bevy/webgl2", "tonemapping_luts", "bloom", "pbr_transmission_textures"]
+
+# Passthroughs from CLAUDE.md's feature list → the bevy features that back them.
+# NOTE: there is no bevy `bloom` feature in 0.19 — Bloom moved into
+# `bevy_post_process`, so that is what `bloom` maps to.
+tonemapping_luts = ["render", "bevy/tonemapping_luts"]
+bloom = ["render", "bevy/bevy_post_process"]
+pbr_transmission_textures = ["render", "bevy/pbr_transmission_textures"]
+
+# Headless: links NO rendering. Just enough bevy for an App + MinimalPlugins.
+headless = ["bevy/std"]

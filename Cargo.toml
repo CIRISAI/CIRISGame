@@ -7,7 +7,7 @@
 # the core unchanged.
 [workspace]
 resolver = "2"
-members = ["crates/ciris-game-engine-core"]
+members = ["crates/ciris-game-engine-core", "crates/ciris-game-engine"]
 
 [workspace.package]
 edition = "2021"
