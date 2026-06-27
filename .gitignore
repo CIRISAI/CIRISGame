@@ -1,0 +1,29 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# WASM build outputs
+/dist
+/pkg
+*.wasm.map
+
+# Web bundling
+node_modules/
+.parcel-cache/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editor / agent state
+.claude/
+.idea/
+.vscode/
+*.swp
+
+# Local secrets / scratch
+*.env
+.env.local
+*.identity
+/keyring

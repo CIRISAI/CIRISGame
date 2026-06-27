@@ -1,0 +1,40 @@
+name: Test
+
+# Explicit cargo test workflow — exists as a discrete entry point so people
+# (and reviewers' eyes) can find the "tests" gate by name. The real test
+# matrix runs inside ci.yml's clippy-test job across three OSes; this
+# workflow runs a focused cargo test on the cheapest OS plus the doctests,
+# and stays cheap enough to attach to non-PR triggers if we need to.
+#
+# CIRISAgent has no single test.yml — its test sharding lives inside
+# build.yml's `test` job. This file is the Rust-side analogue: a dedicated
+# tests entry point. The cross-OS coverage is in ci.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: cargo test + doctests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install renderer build deps (Linux)
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libx11-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          cache-bin: false
+      - run: cargo test --all
+      - run: cargo test --doc

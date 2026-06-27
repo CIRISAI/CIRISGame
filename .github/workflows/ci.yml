@@ -1,0 +1,60 @@
+name: CI
+
+# CIRISGame core CI gate. Mirrors the sibling shape of
+# CIRISServer/.github/workflows/ci.yml — fmt + clippy + test across the three
+# OSes a desktop binary actually ships on. The WASM lane (the browser-first
+# target) lives in build.yml; this workflow is the always-green correctness
+# gate that PRs must pass.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy-test:
+    name: clippy + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # Renderer-tier deps. macroquad/bevy native builds need an X-stack on
+      # Linux runners (alsa/x11/udev). macOS + Windows pull frameworks/SDK
+      # libraries directly through cargo — nothing to apt.
+      - name: Install renderer build deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Drop the preinstalled Microsoft/azure-cli apt repo: it intermittently
+          # 403s and tanks apt-get update (CIRISServer/ci.yml convention).
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libx11-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          cache-bin: false
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all

@@ -1,0 +1,193 @@
+name: Release
+
+# CIRISGame release pipeline. Structurally cloned from
+# CIRISServer/.github/workflows/release.yml — tag push → build matrix →
+# tarballs + checksums + Sigstore keyless signing → GitHub Release.
+#
+# CIRISGame is browser-first: every release ships the WASM bundle alongside
+# the desktop binaries. The matrix mirrors CIRISServer's headless-server set
+# (linux x86_64/aarch64, mac x86_64/aarch64, windows x86_64) trimmed for a
+# user-facing game (no armv7/musl embedded mesh lane — a 3D-lattice game
+# does not run on a Raspberry Pi mesh node), plus the wasm32 lane.
+#
+# App-store credential lanes (Apple notarization, Windows code signing,
+# Google Play upload, App Store Connect) are stubbed below as TODOs against
+# their original CIRISAgent secrets.* names — wire them when the relevant
+# developer accounts are provisioned.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  id-token: write  # Sigstore keyless signing
+
+jobs:
+  build-native:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install renderer build deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libx11-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config
+
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          cache-bin: false
+          key: release-${{ matrix.target }}-${{ github.ref_name }}
+
+      - name: Build (native)
+        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage + strip binary
+        shell: bash
+        run: |
+          mkdir -p stage
+          EXT=""; [ "${{ runner.os }}" = "Windows" ] && EXT=".exe"
+          BIN="target/${{ matrix.target }}/release/ciris-game${EXT}"
+          if [ -f "$BIN" ]; then
+            if [ "${{ runner.os }}" != "Windows" ]; then strip "$BIN" || true; fi
+            cp "$BIN" stage/
+          else
+            find target/${{ matrix.target }}/release -maxdepth 1 -type f -perm -u+x -exec cp {} stage/ \;
+          fi
+
+      # TODO(release-signing): Apple notarization for the macOS lanes.
+      # Requires secrets.APPLE_DEVELOPER_ID_CERT (base64 .p12),
+      # secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD,
+      # secrets.APPLE_NOTARIZE_USER, secrets.APPLE_NOTARIZE_TEAM_ID,
+      # secrets.APPLE_NOTARIZE_APP_PASSWORD. Wire when an Apple Developer
+      # account is provisioned.
+      #
+      # TODO(release-signing): Windows Authenticode signing for the .exe.
+      # Requires secrets.WINDOWS_CERT (base64 .pfx) +
+      # secrets.WINDOWS_CERT_PASSWORD. Wire when a code-signing cert is
+      # purchased.
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ciris-game-${{ matrix.target }}
+          path: stage/
+          if-no-files-found: error
+
+  build-wasm:
+    name: Build (wasm32 browser bundle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          cache-bin: false
+          key: release-wasm-${{ github.ref_name }}
+      - name: Install wasm-bindgen-cli
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: cargo install wasm-bindgen-cli --version 0.2.95 --locked
+      - name: Build wasm
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Stage bundle
+        shell: bash
+        run: |
+          mkdir -p stage
+          for w in target/wasm32-unknown-unknown/release/*.wasm; do
+            [ -f "$w" ] || continue
+            wasm-bindgen --target web --out-dir stage "$w"
+          done
+          if [ -d web ]; then cp -R web/* stage/; fi
+          ls -lh stage/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ciris-game-wasm32-unknown-unknown
+          path: stage/
+          if-no-files-found: error
+
+  create-release:
+    name: Create Release
+    needs: [build-native, build-wasm]
+    # Run as long as the build stage finished (not cancelled) — match
+    # CIRISServer's release.yml convention so a single OS lane going red
+    # doesn't suppress the release.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Package + checksum
+        run: |
+          mkdir -p release
+          for dir in artifacts/ciris-game-*; do
+            [ -d "$dir" ] || continue
+            target=$(basename "$dir" | sed 's/ciris-game-//')
+            tar -czvf "release/ciris-game-${{ github.ref_name }}-${target}.tar.gz" -C "$dir" .
+          done
+          cd release && sha256sum *.tar.gz > SHA256SUMS
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign artifacts (Sigstore keyless)
+        run: |
+          cd release
+          for f in *.tar.gz SHA256SUMS; do
+            cosign sign-blob --yes --output-signature "$f.sig" --output-certificate "$f.pem" "$f"
+          done
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release/*.tar.gz
+            release/*.tar.gz.sig
+            release/*.tar.gz.pem
+            release/SHA256SUMS
+            release/SHA256SUMS.sig
+            release/SHA256SUMS.pem
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+
+  # TODO(app-store): Google Play upload of an Android WebView wrapper of the
+  # WASM bundle. Original CIRISAgent build.yml `android-release` job used
+  # secrets.GITHUB_TOKEN (release attach) + an unpublished signing key path.
+  # Wire when a Play Console account exists.
+  #
+  # TODO(app-store): App Store Connect upload of an iOS WKWebView wrapper.
+  # Requires secrets.APPLE_NOTARIZE_USER, secrets.APPLE_NOTARIZE_TEAM_ID,
+  # secrets.APPLE_NOTARIZE_APP_PASSWORD, secrets.APPSTORECONNECT_API_KEY_ID,
+  # secrets.APPSTORECONNECT_API_ISSUER_ID,
+  # secrets.APPSTORECONNECT_API_PRIVATE_KEY (base64 .p8).

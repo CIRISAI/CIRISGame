@@ -1,0 +1,999 @@
+[
+  {
+    "knob": "anim.frames",
+    "defaultValue": "10",
+    "range": "6 .. 24",
+    "effect": "Frames per animation export; more frames = longer LLM context cost.",
+    "section": "AI-API"
+  },
+  {
+    "knob": "render.budget_per_turn",
+    "defaultValue": "20",
+    "range": "4 .. 80",
+    "effect": "Per-agent rendering budget per turn; higher lets agents reason visually over many candidate moves.",
+    "section": "AI-API"
+  },
+  {
+    "knob": "aria_live_min_interval_ms",
+    "defaultValue": "1500",
+    "range": "500 .. 5000",
+    "effect": "Minimum gap between announcements on the \u00a77.12 unified canvas-adjacent role='status' aria-live='polite' region. Prevents JAWS/NVDA from clipping mid-sentence reads (below 1000 ms creates friction).",
+    "section": "Accessibility",
+    "applyMode": "live"
+  },
+  {
+    "knob": "arcball.axisSnapDegrees",
+    "defaultValue": "8.0",
+    "range": "0.0 .. 30.0",
+    "effect": "Angular dead-band (deg) within which release snaps to nearest cardinal steward axis; 0 disables snap.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "arcball.fadeInMs",
+    "defaultValue": "200",
+    "range": "50 .. 600",
+    "effect": "Ease-out-cubic fade-in duration for the arcball sphere on twist activation; < 100 feels poppy, > 400 feels reluctant.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "arcball.fadeOutMs",
+    "defaultValue": "400",
+    "range": "100 .. 1000",
+    "effect": "Ease-in-cubic fade-out duration after gesture release; asymmetric with fadeIn so the eye verifies the release pose.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "arcball.releaseEaseMs",
+    "defaultValue": "300",
+    "range": "100 .. 1000",
+    "effect": "Ease-out-cubic duration for the camera to interpolate to the minimap's final pose after release.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "arcball.sphereAlpha",
+    "defaultValue": "0.12",
+    "range": "0.00 .. 0.40",
+    "effect": "Alpha of the Bone-tinted arcball shell; > 0.25 starts occluding the minimap inside.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "arcball.sphereRadiusFactor",
+    "defaultValue": "1.6",
+    "range": "1.0 .. 3.0",
+    "effect": "Translucent arcball sphere radius as multiple of N (radius = factor * N); must exceed 1.0 to enclose the board.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "camera.layerForwardSpeedCap",
+    "defaultValue": "1.5",
+    "range": "0.5 .. 4.0",
+    "effect": "World-units/s ceiling on layer-traversal dolly; higher feels jet-ski, lower feels surgical.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "camera.layerSmoothingTau",
+    "defaultValue": "0.20",
+    "range": "0.05 .. 0.50",
+    "effect": "Exponential-smoothing time constant (s) for camera dolly; raise for inertia, lower for snap.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "camera.nearClipOffset",
+    "defaultValue": "0.05",
+    "range": "0.00 .. 0.30",
+    "effect": "World-unit offset from camera position at which behind-cells begin to fade; 0 = hard clip, larger = wider soft-fade gradient.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "camera.recenterDurationMs",
+    "defaultValue": "700",
+    "range": "200 .. 2000",
+    "effect": "Ease-out-cubic duration of the Re-Center glyph's return-to-seat tween; < 300 feels teleport, > 1200 feels syrup.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "camera.softClipGradient",
+    "defaultValue": "0.30 world units",
+    "range": "0.00..1.00",
+    "effect": "Width of the fade-out gradient at the layer-traversal near-clip boundary. 0 = hard clip; >0 = smooth dissolve.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "camera.vignetteIntensity",
+    "defaultValue": "0.10",
+    "range": "0.00..0.50",
+    "effect": "Edge darkening when camera is inside the AABB. 0 = none, 0.5 = strong. The spec text reads 0..0.35 at peak.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "keyboard.arcball.keyRepeatDebounceMs",
+    "defaultValue": "120",
+    "range": "0 .. 300",
+    "effect": "Debounce on Shift+Arrow key-repeat to prevent stray text-navigation from triggering first-twist theater.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "keyboard.arcball.pitchDegPerPress",
+    "defaultValue": "8",
+    "range": "1 .. 30",
+    "effect": "Discrete pitch delta per Shift+ArrowUp/Down press for keyboard arcball parity.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "keyboard.arcball.yawDegPerPress",
+    "defaultValue": "12",
+    "range": "1 .. 45",
+    "effect": "Discrete yaw delta per Shift+ArrowLeft/Right press for keyboard arcball parity.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "minimap.cellScale",
+    "defaultValue": "0.05",
+    "range": "0.02 .. 0.15",
+    "effect": "World-unit shell radius of cells in the minimap-inside-sphere; cores and pipes scale proportionally.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "mobile_aria_live_verbosity",
+    "defaultValue": "compact",
+    "range": "compact | verbose | silent (v0.4 'verbose' DEFERRED)",
+    "effect": "ASCII BoardView pipe to \u00a77.12 aria-live region. 'verbose' announces twist-neighbors on focus; DEFERRED to v0.5.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "mobile_minimap_active_radius_multiplier",
+    "defaultValue": "1.4",
+    "range": "1.0 .. 2.0",
+    "effect": "Minimap radius multiplier during active twist gesture.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "mobile_minimap_radius_multiplier",
+    "defaultValue": "1.2",
+    "range": "0.8 .. 1.8",
+    "effect": "Resting minimap arcball radius as multiple of N (desktop \u00a74.10.3 is 1.6).",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "mobile_minimap_screen_floor_px",
+    "defaultValue": "120",
+    "range": "80 .. 200",
+    "effect": "Minimum screen-space diameter of minimap regardless of world-unit projection.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "reduced_motion_atari_breath_alpha",
+    "defaultValue": "0.6",
+    "range": "0.0 .. 1.0",
+    "effect": "Atari 0.6 Hz breath pulse amplitude under prefers-reduced-motion (vs default 0.9). Brand override: never zero (pedagogy load-bearing).",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "seat.activePulseFreq",
+    "defaultValue": "0.4",
+    "range": "0.1 .. 2.0",
+    "effect": "Hz of the active-steward seat radius envelope (+-3% modulation); > 1.0 reads as anxious.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "seat.ballRadius",
+    "defaultValue": "0.22",
+    "range": "0.10 .. 0.50",
+    "effect": "World-unit radius of the steward-colored seat ball floating on the ring.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "seat.elevationFactor",
+    "defaultValue": "0.20",
+    "range": "0.00 .. 0.60",
+    "effect": "Seat elevation above board midplane as multiple of N (y = factor * N); 0 = eye-level, 0.6 = god-view.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "seat.radiusFactor",
+    "defaultValue": "1.80",
+    "range": "1.20 .. 3.00",
+    "effect": "Seat ring radius as multiple of N (R = factor * N); 1.20 sits inside the AABB shoulder, 3.00 reads as auditorium.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "seat.tagFontSize",
+    "defaultValue": "12",
+    "range": "8 .. 20",
+    "effect": "Pixel size of the steward name/tag rendered beside each seat ball.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "theater.ariaLiveString",
+    "defaultValue": "Board minimap revealed. Twist or Shift+Arrow to rotate.",
+    "range": "string",
+    "effect": "Polite \u00a77.12 aria-live announcement at theater end and on degraded 200 ms paths. Sourced from \u00a77.6 AI-API ASCII channel registry.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "theater.clayRimPeakAlpha",
+    "defaultValue": "0.55",
+    "range": "0.35 .. 0.70",
+    "effect": "Peak alpha of Clay #D97757 Fresnel rim during theater. Settles to \u00a74.10.3 spec 0.35 by t=1200 ms.",
+    "section": "Camera",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "theater.clayRimPeakAtMs",
+    "defaultValue": "600",
+    "range": "200 .. 1000",
+    "effect": "Timestamp within the dolly at which Clay rim alpha peaks.",
+    "section": "Camera",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "theater.deferDuringAtari",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "If true and AI Atari mist is active (mesh-size >= 6), theater defers to next idle gesture.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "theater.dollyDegDesktop",
+    "defaultValue": "30",
+    "range": "0 .. 60",
+    "effect": "Cinematic orbit angle on desktop viewports above 768 px. 0 = no orbit.",
+    "section": "Camera",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "theater.dollyDegMobile",
+    "defaultValue": "20",
+    "range": "0 .. 45",
+    "effect": "Cinematic orbit angle on mobile-portrait at-or-below 768 px. Lower mitigates angular-FOV vestibular load.",
+    "section": "Camera",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "theater.dollyMs",
+    "defaultValue": "1200",
+    "range": "0 .. 2000",
+    "effect": "Main-camera cinematic dolly duration. 0 disables dolly while preserving the fade.",
+    "section": "Camera",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "theater.encoreShiftTwist",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "Allow Shift+twist to re-fire theater without clearing storage. Drawer encore line always present.",
+    "section": "Camera",
+    "applyMode": "live"
+  },
+  {
+    "knob": "theater.fadeMs",
+    "defaultValue": "800",
+    "range": "200 .. 1200",
+    "effect": "First-twist Bone sphere fade-in duration. 200 = \u00a74.10.3 spec snap, 800 = theater default.",
+    "section": "Camera",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "theater.resetUrlHash",
+    "defaultValue": "#resettheater",
+    "range": "string",
+    "effect": "URL hash that, on load, clears cirisgame.onboarding.firstTwistSeen_v04 for QA and content capture.",
+    "section": "Camera",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "theater.storageKey",
+    "defaultValue": "cirisgame.onboarding.firstTwistSeen_v04",
+    "range": "string",
+    "effect": "Versioned localStorage key. Bump suffix to force re-show on protocol changes.",
+    "section": "Camera",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "agx.exposure",
+    "defaultValue": "0.0",
+    "range": "-1.0..+1.0",
+    "effect": "ColorGrading.global.exposure for the AgX tonemapper. Negative = darker, positive = brighter; Anthropic-neutral starting point.",
+    "section": "Color & Lighting",
+    "applyMode": "live"
+  },
+  {
+    "knob": "agx.postSaturation",
+    "defaultValue": "1.0",
+    "range": "0.5..1.5",
+    "effect": "ColorGrading.global.post_saturation for AgX. >1 boosts color punch; <1 mutes.",
+    "section": "Color & Lighting",
+    "applyMode": "live"
+  },
+  {
+    "knob": "bloom.luminanceThreshold",
+    "defaultValue": "0.78",
+    "range": "0.5 .. 0.95",
+    "effect": "Lower = more surfaces bloom; raise to keep clear glass dark.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "bloom.strength",
+    "defaultValue": "0.45",
+    "range": "0.0 .. 1.0",
+    "effect": "Halo size around colored cores; > 0.7 reads as hot.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "core.emissiveIntensity",
+    "defaultValue": "1.4",
+    "range": "0.0 .. 3.0",
+    "effect": "How much steward color drives bloom; tied to T(M) at runtime.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "endgame.mourn.coolHueShift",
+    "defaultValue": "+8 deg toward Lapis",
+    "range": "0..30 deg",
+    "effect": "Hue shift toward cool (Lapis) for mourning meshes. Higher = more visibly grieving.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "endgame.wild.bloomPulseDur",
+    "defaultValue": "5 s",
+    "range": "1..15 s",
+    "effect": "Duration of the screen-wide bloom pulse at the WILD ending. Longer = more euphoric.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "exposure",
+    "defaultValue": "1.0",
+    "range": "0.6 .. 1.6",
+    "effect": "Brightens the whole scene; > 1.3 starts clipping Clay highlights into white.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "fill.intensity",
+    "defaultValue": "0.55",
+    "range": "0.0 .. 1.2",
+    "effect": "Lifts the shadow side; high values kill the form, low values turn spheres dramatic.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "glass.greenTint.opacity",
+    "defaultValue": "0.03",
+    "range": "0.0 .. 0.10",
+    "effect": "Borosilicate edge cast; > 0.07 starts to look like jade.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "key.intensity",
+    "defaultValue": "1.6",
+    "range": "0.8 .. 2.4",
+    "effect": "Hardens the shadow side of each sphere; lower = flatter, more ceramic.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "rim.intensity",
+    "defaultValue": "1.2",
+    "range": "0.0 .. 2.0",
+    "effect": "Strengthens the silhouette; this is the glass-edge knob.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "sky.intensity",
+    "defaultValue": "0.35",
+    "range": "0.0 .. 0.8",
+    "effect": "Adds ambient bath; > 0.6 washes out the rim.",
+    "section": "Color & Lighting"
+  },
+  {
+    "knob": "daily.backend_base_url",
+    "defaultValue": "https://daily.play.ciris.ai",
+    "range": "any https URL",
+    "effect": "Cloudflare Worker base URL for aggregates GET and submission POST. Configurable for self-hosting and CI.",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "daily.enabled",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "Master switch. False removes 'Today' button and rejects #d= hash route (falls through to screensaver).",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "daily.og_card_max_age_seconds",
+    "defaultValue": "86400",
+    "range": "300 .. 604800",
+    "effect": "Cloudflare edge cache TTL for OG card PNG. 24h matches the daily rollover.",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "daily.share_format",
+    "defaultValue": "ascii_plus_grid",
+    "range": "ascii_only | ascii_plus_grid | grid_only",
+    "effect": "Which share string the Copy button writes. ascii_plus_grid is the dual-line default; grid_only never the silent default to keep accessibility canonical.",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "daily.show_coherence_ribbon",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "Show the non-ranking coherence ribbon (plays count + all-survivors count; median DEFERRED to v0.5). Hides silently if endpoint unavailable.",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "daily.show_inviter_target",
+    "defaultValue": "false",
+    "range": "true / false (v0.4 LOCKED false)",
+    "effect": "Display &p=N inviter target pill on landing. v0.4 LOCKED false per K-factor optimization deferral; v0.5 may enable.",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "daily.streak_counter",
+    "defaultValue": "false",
+    "range": "false (LOCKED forever)",
+    "effect": "EXPLICITLY LOCKED OFF. Streak counters convert M-1 sustained-coherence pedagogy into anxiety; hard-no per accessibility + brand consensus. Knob exists so future PRs proposing a streak find the locked refusal first.",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "daily.submit_default",
+    "defaultValue": "false",
+    "range": "true / false",
+    "effect": "Default state of opt-in submission checkbox on end screen. Must stay false to honor accessibility + privacy bounds.",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "daily.submit_rate_limit_per_ip_per_day",
+    "defaultValue": "10",
+    "range": "1 .. 50",
+    "effect": "Worker KV rate limit on POST endpoint to deter casual abuse without a replay verifier.",
+    "section": "Daily Seed",
+    "applyMode": "live"
+  },
+  {
+    "knob": "endgame.autoRestart.normal",
+    "defaultValue": "10 s",
+    "range": "0..60 s",
+    "effect": "Delay before screensaver auto-restarts after a normal end. 0 = instant restart; 10 s = lets the viewer absorb the score.",
+    "section": "Layout"
+  },
+  {
+    "knob": "endgame.autoRestart.wild",
+    "defaultValue": "18 s",
+    "range": "0..60 s",
+    "effect": "Delay before screensaver auto-restarts after a WILD ending. Longer than normal because the wild animation runs ~18 s itself.",
+    "section": "Layout"
+  },
+  {
+    "knob": "screensaver.idle_hide_ms",
+    "defaultValue": "3000",
+    "range": "1000 .. 10000",
+    "effect": "Cursor + chrome auto-hide delay in screensaver.",
+    "section": "Layout"
+  },
+  {
+    "knob": "atari.foreshadowRingAlpha",
+    "defaultValue": "0.25",
+    "range": "0.0..0.6",
+    "effect": "Verdigris ring alpha around atari cells. Higher = more obvious 'this is dying soon'; lower = subtle hint to advanced players only.",
+    "section": "Materials"
+  },
+  {
+    "knob": "atari.ringAlpha",
+    "defaultValue": "0.25",
+    "range": "0.00..0.60",
+    "effect": "Verdigris foreshadowing ring opacity around atari cells.",
+    "section": "Materials",
+    "applyMode": "live"
+  },
+  {
+    "knob": "ghostCell.lineAlpha",
+    "defaultValue": "0.18",
+    "range": "0.05 .. 0.40",
+    "effect": "Lattice opacity; higher = grid more present.",
+    "section": "Materials"
+  },
+  {
+    "knob": "minimap.renderLayer",
+    "defaultValue": "2",
+    "range": "0 .. 15",
+    "effect": "Bevy RenderLayers index for minimap entities and the dedicated minimap camera; must not collide with 0 (main) or 1 (selective bloom cores).",
+    "section": "Materials",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "minimap.unlit",
+    "defaultValue": "true",
+    "range": "true | false",
+    "effect": "Render minimap with unlit emissive material (true) or full PBR (false); false re-enters the refraction/shadow stack and costs frame budget.",
+    "section": "Materials",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "pipe.radius",
+    "defaultValue": "0.055",
+    "range": "0.030 .. 0.090",
+    "effect": "Pipe presence; thicker reads as cables, thinner as filaments.",
+    "section": "Materials"
+  },
+  {
+    "knob": "shell.attenuationDistance",
+    "defaultValue": "2.2",
+    "range": "1.0 .. 4.0",
+    "effect": "How far the green tint reaches into the shell.",
+    "section": "Materials"
+  },
+  {
+    "knob": "shell.chromaticAberration",
+    "defaultValue": "0.035",
+    "range": "0.0 .. 0.10",
+    "effect": "RGB split at the rim; > 0.06 starts to look like a cheap lens.",
+    "section": "Materials"
+  },
+  {
+    "knob": "shell.thickness",
+    "defaultValue": "0.18",
+    "range": "0.05 .. 0.40",
+    "effect": "Refraction band width; thicker = more lensing on the core.",
+    "section": "Materials"
+  },
+  {
+    "knob": "mobile_breakpoint_px",
+    "defaultValue": "768",
+    "range": "600 .. 900",
+    "effect": "Viewport width below which MobilePortrait Bevy Resource activates (combined with portrait orientation + coarse pointer).",
+    "section": "Mobile",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "mobile_camera_elevation_default_deg",
+    "defaultValue": "35",
+    "range": "20 .. 65",
+    "effect": "Resting camera elevation above horizon in portrait mode (seat ring R = 1.80 * N unchanged).",
+    "section": "Mobile",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "mobile_camera_welcome_tilt_deg",
+    "defaultValue": "60",
+    "range": "30 .. 80",
+    "effect": "Initial down-tilt that eases to default elevation over 1.2 s on first portrait load.",
+    "section": "Mobile",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "mobile_handedness_default",
+    "defaultValue": "right",
+    "range": "right | left | auto (v0.4 'auto' DEFERRED)",
+    "effect": "Initial HUD thumb-reach side. 'auto' uses first non-place tap location heuristic; DEFERRED to v0.5. Persists to localStorage.",
+    "section": "Mobile",
+    "applyMode": "live"
+  },
+  {
+    "knob": "mobile_long_press_ms",
+    "defaultValue": "400",
+    "range": "200 .. 1200",
+    "effect": "Dwell time before single-finger drag arms as twist gesture. Tunable for motor-impaired range.",
+    "section": "Mobile",
+    "applyMode": "live"
+  },
+  {
+    "knob": "mobile_long_press_tolerance_px",
+    "defaultValue": "6",
+    "range": "2 .. 16",
+    "effect": "Movement budget during dwell before twist-arm cancels.",
+    "section": "Mobile",
+    "applyMode": "live"
+  },
+  {
+    "knob": "mobile_perf_tier_threshold_gb",
+    "defaultValue": "4",
+    "range": "2 .. 8",
+    "effect": "navigator.deviceMemory below which mobile-lite Cargo feature auto-engages.",
+    "section": "Mobile",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "atari.breathFreq",
+    "defaultValue": "0.6 Hz",
+    "range": "0.2..2.0 Hz",
+    "effect": "Inhale/exhale frequency of the atari particle emissive pulse. ~0.6 Hz reads as held human breath (10/min); too slow feels dead; too fast feels panicked.",
+    "section": "Motion"
+  },
+  {
+    "knob": "atari.kuramotoBeta",
+    "defaultValue": "0.4",
+    "range": "0.0..1.5",
+    "effect": "Phase-coupling strength across the atari mesh's particles. 0 = independent (no synchrony, atari illegible). >0.6 = lockstep so tight it looks scripted.",
+    "section": "Motion"
+  },
+  {
+    "knob": "atari.orbitSpeed",
+    "defaultValue": "0.35 rad/s",
+    "range": "0.0..1.5",
+    "effect": "Locked particle orbit speed when a mesh enters atari. Slower than calm temperature default so the breath reads as 'holding'.",
+    "section": "Motion"
+  },
+  {
+    "knob": "endgame.celebrate.burstHz",
+    "defaultValue": "4 Hz",
+    "range": "0.5..12 Hz",
+    "effect": "Sparkle burst frequency per celebrating mesh. Higher = more confetti.",
+    "section": "Motion"
+  },
+  {
+    "knob": "endgame.celebrate.orbitMul",
+    "defaultValue": "1.5",
+    "range": "1.0..3.0",
+    "effect": "Orbit-speed multiplier for surviving meshes far from any perma-dead. Higher = giddier.",
+    "section": "Motion"
+  },
+  {
+    "knob": "endgame.mourn.orbitMul",
+    "defaultValue": "0.3",
+    "range": "0.0..1.0",
+    "effect": "Orbit-speed multiplier for surviving meshes face-adjacent to any perma-dead cell. 0 = halt; 0.3 = contemplative; 1.0 = no mourning.",
+    "section": "Motion"
+  },
+  {
+    "knob": "endgame.wild.cameraSweep",
+    "defaultValue": "540 deg over 12 s",
+    "range": "0..1080 deg over 4..30 s",
+    "effect": "Slow camera rotation around the board during WILD. 540 deg = one and a half full rotations; visible but not nauseating.",
+    "section": "Motion"
+  },
+  {
+    "knob": "endgame.wild.crossMeshArcs",
+    "defaultValue": "true",
+    "range": "true | false",
+    "effect": "In the WILD all-survived ending, agent particles cross mesh-color boundaries on Hermite arcs. Disabling reduces to celebrate-only (less rapturous).",
+    "section": "Motion"
+  },
+  {
+    "knob": "gs.iters_per_frame_60hz",
+    "defaultValue": "16",
+    "range": "4 .. 32",
+    "effect": "Pattern evolution speed; halving doubles the effective shimmer period.",
+    "section": "Motion"
+  },
+  {
+    "knob": "mist.perma.flowSpeed",
+    "defaultValue": "0.3 units/s",
+    "range": "0.0..1.5 units/s",
+    "effect": "Simplex noise sample velocity inside the perma-dead mist. Slower than temp by half \u2014 the cell has settled. 0 = still mist.",
+    "section": "Motion"
+  },
+  {
+    "knob": "mist.permaFlowSpeed",
+    "defaultValue": "0.3 units/s",
+    "range": "0.0..1.5",
+    "effect": "Simplex noise sample velocity inside perma-dead (green) mist.",
+    "section": "Motion",
+    "applyMode": "live"
+  },
+  {
+    "knob": "mist.rayMarchSteps",
+    "defaultValue": "32",
+    "range": "8..64",
+    "effect": "Volumetric integration steps per fragment. Lower = chunkier mist + cheaper. Higher = smoother + more expensive.",
+    "section": "Motion"
+  },
+  {
+    "knob": "mist.temp.flowSpeed",
+    "defaultValue": "0.6 units/s",
+    "range": "0.1..3.0 units/s",
+    "effect": "Simplex noise sample velocity inside the temp-dead mist. Faster = more agitated death scene.",
+    "section": "Motion"
+  },
+  {
+    "knob": "mist.tempFlowSpeed",
+    "defaultValue": "0.6 units/s",
+    "range": "0.1..3.0",
+    "effect": "Simplex noise sample velocity inside temp-dead (black) mist.",
+    "section": "Motion",
+    "applyMode": "live"
+  },
+  {
+    "knob": "orbits.omega_base",
+    "defaultValue": "0.40 rad/s",
+    "range": "0.0 .. 1.5 rad/s",
+    "effect": "Particle base spin; zero stills the at-rest sphere.",
+    "section": "Motion"
+  },
+  {
+    "knob": "orbits.wobble_amp_gain",
+    "defaultValue": "0.18 R",
+    "range": "0.0 .. 0.40 R",
+    "effect": "Heat-driven wobble amplitude; > 0.30 reads as escaping the shell.",
+    "section": "Motion"
+  },
+  {
+    "knob": "temperature.T_norm",
+    "defaultValue": "1.40",
+    "range": "0.5 .. 4.0",
+    "effect": "Display normalization scale; smaller = saturates faster into chaos band.",
+    "section": "Motion"
+  },
+  {
+    "knob": "temperature.alpha",
+    "defaultValue": "0.060",
+    "range": "0.020 .. 0.150",
+    "effect": "Internal Brownian gain; bigger alpha = lone-large meshes run hotter.",
+    "section": "Motion"
+  },
+  {
+    "knob": "temperature.beta",
+    "defaultValue": "0.080",
+    "range": "0.020 .. 0.200",
+    "effect": "Large-bleeds-to-small rate; higher = stronger heat-capacity asymmetry.",
+    "section": "Motion"
+  },
+  {
+    "knob": "temperature.delta",
+    "defaultValue": "0.060",
+    "range": "0.000 .. 0.120",
+    "effect": "Resonance gain; higher = twin-large meshes peak harder together. Aligned to DESIGN_BRIEF §4.1 starting default; final value lands after the resonance sweep (BACKLOG #3).",
+    "section": "Motion"
+  },
+  {
+    "knob": "temperature.gamma",
+    "defaultValue": "0.050",
+    "range": "0.020 .. 0.150",
+    "effect": "Heated-by-larger gain; higher = small meshes panic faster near big ones.",
+    "section": "Motion"
+  },
+  {
+    "knob": "turn.node_appear_ms",
+    "defaultValue": "600",
+    "range": "200 .. 1500",
+    "effect": "New-cell scale-in duration; lower = snappy, higher = ceremonial.",
+    "section": "Motion"
+  },
+  {
+    "knob": "turn.pause_screensaver_ms",
+    "defaultValue": "2500",
+    "range": "800 .. 6000",
+    "effect": "Inter-move pacing in screensaver; lower = arcade, higher = aquarium.",
+    "section": "Motion"
+  },
+  {
+    "knob": "name.first_commit_tooltip",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "Show 4 s tooltip 'this name stays on your device' on first-ever commit. Once dismissed never shown again per browser/profile.",
+    "section": "Names",
+    "applyMode": "live"
+  },
+  {
+    "knob": "name.itp_fallback_banner",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "Show one-time banner when localStorage returns empty after a known prior session (Safari ITP or Firefox ETP wipe detection).",
+    "section": "Names",
+    "applyMode": "live"
+  },
+  {
+    "knob": "name.legend_aria_live",
+    "defaultValue": "polite",
+    "range": "off | polite | assertive",
+    "effect": "Politeness level for \u00a77.12 aria-live mirror of legend thinking state. assertive interrupts, polite queues.",
+    "section": "Names",
+    "applyMode": "live"
+  },
+  {
+    "knob": "name.max_graphemes",
+    "defaultValue": "12",
+    "range": "4 .. 24",
+    "effect": "Hard cap on extended grapheme clusters per steward name input. Lower for tighter legend/seat-tag fit; higher for full real-world names.",
+    "section": "Names",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "name.show_pigment_secondary_line",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "Renders pigment name as 12 px Stone secondary line beneath custom name in \u00a75.5 legend and \u00a75.7 score row. Color-blind and AT anchor.",
+    "section": "Names",
+    "applyMode": "live"
+  },
+  {
+    "knob": "replay.autoLoop",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "Whether the inline end-screen card auto-loops. Disabling forces explicit play tap; play-sim confirms autoLoop is load-bearing for the share-loop firing before swipe-away reflex.",
+    "section": "Shareable Replay",
+    "applyMode": "live"
+  },
+  {
+    "knob": "replay.bytesCapKb",
+    "defaultValue": "500",
+    "range": "200 .. 2000",
+    "effect": "Hard size ceiling in KB for the APNG. Frame-drop fallback triggers above this, max 3 passes. Higher values let you keep all frames at 384x384.",
+    "section": "Shareable Replay",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "replay.captureTurns",
+    "defaultValue": "8",
+    "range": "4 .. 20",
+    "effect": "Number of turns captured, centered on highest-|M| event (or final 12 for WILD). Smaller windows tighten the dispersal cascade; larger windows include more setup but blow byte budget.",
+    "section": "Shareable Replay",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "replay.cardEpigramEnabled",
+    "defaultValue": "true",
+    "range": "true / false",
+    "effect": "Whether the static -card.png bakes a Tiempos epigram strip ('{score} perma-dead.' / 'The federation held.'). Off ships card.png as a clean board-state frame.",
+    "section": "Shareable Replay",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "replay.flashGuardLuminanceDelta",
+    "defaultValue": "0.10",
+    "range": "0.05 .. 0.20",
+    "effect": "WCAG 2.3.1 luminance-delta threshold for the pre-encode flash guard. Lower = more aggressive 167 ms hold-frame injection during the dispersal cascade.",
+    "section": "Shareable Replay",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "replay.fps",
+    "defaultValue": "6",
+    "range": "4 .. 12",
+    "effect": "Animation frame rate. 6 fps matches \u00a77.6 and the size budget. Raising trades file size for smoother dispersal-cascade motion.",
+    "section": "Shareable Replay",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "replay.size",
+    "defaultValue": "384",
+    "range": "256 .. 512",
+    "effect": "Pixel dimensions of the shareable APNG and card.png. 384 is the human-readable default; 256 matches the AI-API \u00a77.6 size for parity. Larger values may trip the 500 KB cap and force frame-drop fallback.",
+    "section": "Shareable Replay",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.ambientGapSecondsMax",
+    "defaultValue": "12",
+    "range": "0 .. 60",
+    "effect": "Maximum silent gap between ambient variant plays (v0.5 ambient asset).",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.ambientGapSecondsMin",
+    "defaultValue": "8",
+    "range": "0 .. 30",
+    "effect": "Minimum silent gap between ambient variant plays (v0.5 ambient asset).",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.ambientVolumeDefault",
+    "defaultValue": "0.00",
+    "range": "0.00 .. 1.00",
+    "effect": "Ambient bus gain on first enable (off by default; ambient assets deferred to v0.5).",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.captionStripVisible",
+    "defaultValue": "false",
+    "range": "true / false",
+    "effect": "Render the \u00a77.12 aria-live captions visibly under the legend for deaf-sighted players (v0.5 UI; v0.4 knob locked at default).",
+    "section": "Sound",
+    "applyMode": "live"
+  },
+  {
+    "knob": "sound.foleyDuckDbAfter4Clicks",
+    "defaultValue": "-3.0",
+    "range": "-12.0 .. 0.0",
+    "effect": "Foley duck after 4 clicks in a 2 s window; 800 ms release.",
+    "section": "Sound",
+    "applyMode": "live"
+  },
+  {
+    "knob": "sound.foleyPitchJitterSemitones",
+    "defaultValue": "3.0",
+    "range": "0.0 .. 6.0",
+    "effect": "Uniform plus-or-minus pitch jitter per placement tick; fights repetition fatigue.",
+    "section": "Sound",
+    "applyMode": "live"
+  },
+  {
+    "knob": "sound.foleyVolumeDefault",
+    "defaultValue": "0.50",
+    "range": "0.00 .. 1.00",
+    "effect": "Foley bus gain on first enable.",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.lufsIntegratedTarget",
+    "defaultValue": "-14",
+    "range": "-23 .. -9",
+    "effect": "Asset-vendor loudnorm integrated LUFS target.",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.masterVolumeDefault",
+    "defaultValue": "0.40",
+    "range": "0.00 .. 1.00",
+    "effect": "Master bus gain on first enable.",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.quietHoursEnabled",
+    "defaultValue": "false",
+    "range": "true / false",
+    "effect": "When true, master ducks -18 dB during local 22:00-07:00 (v0.5 UI; v0.4 knob locked at default).",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.stingVolumeDefault",
+    "defaultValue": "0.70",
+    "range": "0.00 .. 1.00",
+    "effect": "Sting bus gain on first enable (loud-by-default per Naomi compromise).",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.truePeakCeilingDb",
+    "defaultValue": "-6",
+    "range": "-12 .. 0",
+    "effect": "Asset-vendor loudnorm true-peak ceiling.",
+    "section": "Sound",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "sound.welcomeBannerPulseHz",
+    "defaultValue": "0.6",
+    "range": "0.0 .. 2.0",
+    "effect": "Clay #D97757 dot opacity pulse in the \u00a75.6.2 'tap to enable' banner.",
+    "section": "Sound",
+    "applyMode": "live"
+  },
+  {
+    "knob": "sound.wildStingSeconds",
+    "defaultValue": "2.0",
+    "range": "0.5 .. 5.0",
+    "effect": "WILD chord duration.",
+    "section": "Sound",
+    "applyMode": "next-game"
+  }
+]

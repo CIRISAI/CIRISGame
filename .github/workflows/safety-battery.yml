@@ -1,0 +1,18 @@
+name: Safety Battery
+
+# STUB — kept for filename parity with
+# CIRISAgent/.github/workflows/safety-battery.yml.
+#
+# In CIRISAgent, the Safety Battery is a Python pipeline that exercises the
+# moral-reasoning + WBD + DSAR + persistence-tier guards against red-team
+# prompt corpora. It is fundamentally an LLM-agent gate.
+#
+# CIRISGame is a turn-based game with a built-in heuristic AI and an Agent
+# slot that proxies an external LLM via HTTP/JSON. There is no internal
+# moral-reasoning surface to red-team — the agent is OUT-of-process. The
+# game-side analogue (corpus of degenerate boards, "is the AI brutal at
+# brutal and gentle at easy?") will live here when it ships; this stub
+# pins the filename so the sibling map stays one-to-one.
+
+on:
+  workflow_dispatch:

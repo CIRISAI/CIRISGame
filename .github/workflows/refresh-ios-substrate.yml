@@ -1,0 +1,15 @@
+name: Refresh iOS substrate
+
+# STUB — kept for filename parity with
+# CIRISAgent/.github/workflows/refresh-ios-substrate.yml.
+#
+# Upstream this refreshes the iOS-side substrate binaries (the .xcframework
+# libraries the iOS client embeds). The CIRISGame analogue is an iOS
+# WKWebView wrapper around the WASM bundle, which has no precompiled
+# substrate to refresh — the WASM IS the payload, and it is built fresh
+# every release by release.yml's build-wasm job.
+#
+# Leaving this stub in place so the sibling-shaped map stays one-to-one.
+
+on:
+  workflow_dispatch:
