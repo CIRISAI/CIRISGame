@@ -1,0 +1,33 @@
+// CIRISGame — rhombic-dodecahedron ghost-cell wireframe.
+// Canonical edge list for bevy_polyline. Vertices are unit-cell coordinates
+// (cube corners ±0.5, octahedron points ±1.0) giving inradius √2/2 ≈ 0.7071,
+// matching the cell geometric shell-max in DESIGN_BRIEF §3.1.
+// Scale by the board pitch at load; draw in Slate #5F5C55 at 18% alpha (§3.5).
+(
+    inradius: 0.7071,
+    vertices: [
+        ( 0.5,  0.5,  0.5),  // 0  cube
+        ( 0.5,  0.5, -0.5),  // 1
+        ( 0.5, -0.5,  0.5),  // 2
+        ( 0.5, -0.5, -0.5),  // 3
+        (-0.5,  0.5,  0.5),  // 4
+        (-0.5,  0.5, -0.5),  // 5
+        (-0.5, -0.5,  0.5),  // 6
+        (-0.5, -0.5, -0.5),  // 7
+        ( 1.0,  0.0,  0.0),  // 8  +x apex
+        (-1.0,  0.0,  0.0),  // 9  -x apex
+        ( 0.0,  1.0,  0.0),  // 10 +y apex
+        ( 0.0, -1.0,  0.0),  // 11 -y apex
+        ( 0.0,  0.0,  1.0),  // 12 +z apex
+        ( 0.0,  0.0, -1.0),  // 13 -z apex
+    ],
+    // 24 edges — every apex joins the four cube corners sharing its axis sign.
+    edges: [
+        (8, 0), (8, 1), (8, 2), (8, 3),
+        (9, 4), (9, 5), (9, 6), (9, 7),
+        (10, 0), (10, 1), (10, 4), (10, 5),
+        (11, 2), (11, 3), (11, 6), (11, 7),
+        (12, 0), (12, 2), (12, 4), (12, 6),
+        (13, 1), (13, 3), (13, 5), (13, 7),
+    ],
+)
