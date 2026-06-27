@@ -170,7 +170,10 @@ impl Board {
 
     /// Count of empty (placeable) cells.
     pub fn empty_count(&self) -> usize {
-        self.cells.iter().filter(|c| **c == CellState::Empty).count()
+        self.cells
+            .iter()
+            .filter(|c| **c == CellState::Empty)
+            .count()
     }
 
     /// The connected component of same-steward `Live` cells containing `idx`,

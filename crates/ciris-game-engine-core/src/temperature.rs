@@ -15,11 +15,18 @@ pub const ALPHA: f64 = 0.060;
 pub const BETA: f64 = 0.080;
 /// Heated-by-larger gain.
 pub const GAMMA: f64 = 0.050;
-/// Resonance gain (reconciled to DESIGN_BRIEF §4.1).
-pub const DELTA: f64 = 0.060;
+/// Resonance gain (DESIGN_BRIEF §4.1; nudged +0.002 from the starting default so
+/// the near-atari pair (6,5) clears the trigger — BACKLOG #3 Gap 2).
+pub const DELTA: f64 = 0.062;
 
 /// Display normalization constant for [`t_vis`].
 const VIS_SCALE: f64 = 1.40;
+
+/// Scale-awareness floor for resonance (BACKLOG #3 Gap 1). Both meshes of a
+/// face-pair must be at least this size before they can resonate, so small
+/// groups near each other merely *vibe* while big groups near each other
+/// *excite*. Mirrors `ITERATION_KNOBS.json` (`resonance.minMeshSize`).
+pub const RESONANCE_MIN_SIZE: usize = 4;
 
 /// Raw temperature of a mesh of size `m_size` whose face-adjacent enemy meshes
 /// have the given sizes.
@@ -54,22 +61,24 @@ pub fn temperature_word(t_vis: f64) -> &'static str {
     }
 }
 
-/// Returns `true` when a face-pair `(M, N)` resonates under the §4.3 condition.
+/// Returns `true` when a face-pair `(M, N)` resonates (§4.3).
 ///
-/// Resonance condition: `δ · min(|M|, |N|) > 0.5 · (α·|M| + γ·|N|)`.
+/// Two gates, both must pass:
+/// 1. **Scale floor (Gap 1):** `min(|M|, |N|) ≥ RESONANCE_MIN_SIZE`. Small groups
+///    near each other only vibe; big groups near each other can excite. This is
+///    what makes resonance size-aware — without it the bare condition below is
+///    scale-free for balanced pairs (size cancels), so (1,1) would resonate like
+///    (6,6).
+/// 2. **Trigger condition:** `δ · min(|M|, |N|) > 0.5 · (α·|M| + γ·|N|)`.
 ///
-/// **Scale-free for balanced pairs.** When `|M| = |N| = s` the condition reduces
-/// to `δ > 0.5·(α + γ)`, with `s` cancelling. With current defaults (δ = 0.060,
-/// α = 0.060, γ = 0.050) this is `0.060 > 0.055`, so every balanced pair
-/// resonates regardless of size. See BACKLOG #3 analysis for the calibration gap.
-///
-/// **Asymmetric when α ≠ γ.** Because the RHS weighs `|M|` by α and `|N|` by γ,
-/// `resonance_triggers(m, n)` can differ from `resonance_triggers(n, m)` when
-/// `m ≠ n` (e.g., (6, 7) resonates but (7, 6) does not with current defaults).
-///
-/// Resonance direction is large → small (§4.3): heat and attestations flow down
-/// the size gradient; the triggered Hermite arc launches from the larger side.
+/// **Asymmetric when α ≠ γ.** The RHS weighs `|M|` by α and `|N|` by γ, so
+/// `resonance_triggers(m, n)` can differ from `resonance_triggers(n, m)`.
+/// Resonance direction is large → small (§4.3): the Hermite arc launches from
+/// the larger side.
 pub fn resonance_triggers(m_size: usize, n_size: usize) -> bool {
+    if m_size.min(n_size) < RESONANCE_MIN_SIZE {
+        return false;
+    }
     let (lhs, rhs) = resonance_margin(m_size, n_size);
     lhs > rhs
 }

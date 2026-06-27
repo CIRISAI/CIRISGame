@@ -49,7 +49,9 @@ A steward owns one or more *meshes* — the connected components of their colore
 - `k` **perma-dead spacers** — cells turn neutral, rendered as green ethereal mist forever, cannot be reclaimed by any steward.
 - Remainder: `r = 0` → done; `r = 1` → one extra perma-dead; `r = 2` → one extra live pair at the boundary.
 
-The transition runs over two turns: **black mist for one turn** (the death moment, dramatic), then dispersal into **live pairs + perma-dead spacers carrying green mist forever**.
+These counts are a **floor**, not a fixed shape: on the steward's next turn they *lay out their own crater* — choosing which cells come back live and which become perma-dead — so long as they create at least the floor of perma-dead and leave no live group of seven. (Computers take a deterministic legal layout; the move is recorded for replay.) A clever layout can never score below the table; only the placement is the player's.
+
+The transition runs across turns: **black mist** while the crater smoulders (the death moment, dramatic) until the steward's rebuild turn, then dispersal into **live pairs + perma-dead spacers carrying green mist forever**.
 
 **Scoring**: each steward's score is the **total perma-dead stones they created** across the game — magnitude matters. An 8-cell explosion costs 2; a 13-cell costs 5. Lowest score wins; ties allowed. If every steward ends at zero — nobody triggered a coherence collapse — the federation held; the M-1 *sustained adaptive coherence* ending fires.
 

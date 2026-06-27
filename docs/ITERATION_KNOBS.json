@@ -467,6 +467,22 @@
     "applyMode": "live"
   },
   {
+    "knob": "daily_seed.k_min",
+    "defaultValue": "3",
+    "range": "0 .. 15",
+    "effect": "Minimum pre-existing perma-dead cells on a daily board. K is drawn as k_min + (rng % k_range) — DESIGN_BRIEF §8.2.",
+    "section": "Daily Seed",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "daily_seed.k_range",
+    "defaultValue": "13",
+    "range": "1 .. 30",
+    "effect": "RNG modulus for the daily perma-dead count K. Range 13 with k_min=3 gives K in [3,15] (2.4%-12% of a 5x5x5 board).",
+    "section": "Daily Seed",
+    "applyMode": "next-game"
+  },
+  {
     "knob": "daily.submit_default",
     "defaultValue": "false",
     "range": "true / false",
@@ -762,9 +778,16 @@
   },
   {
     "knob": "temperature.delta",
-    "defaultValue": "0.060",
+    "defaultValue": "0.062",
     "range": "0.000 .. 0.120",
-    "effect": "Resonance gain; higher = twin-large meshes peak harder together. Aligned to DESIGN_BRIEF §4.1 starting default; final value lands after the resonance sweep (BACKLOG #3).",
+    "effect": "Resonance gain; higher = twin-large meshes peak harder together. Set by the BACKLOG #3 sweep (nudged +0.002 from 0.060 so the near-atari pair (6,5) clears the trigger).",
+    "section": "Motion"
+  },
+  {
+    "knob": "resonance.minMeshSize",
+    "defaultValue": "4",
+    "range": "2 .. 6",
+    "effect": "Scale floor for the §4.3 resonance trigger: both meshes of a face-pair must be at least this size before they can resonate. Small groups near each other only vibe; big groups near each other excite (BACKLOG #3 Gap 1). Without it the trigger is scale-free for balanced pairs.",
     "section": "Motion"
   },
   {

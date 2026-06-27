@@ -136,7 +136,7 @@ Bevy `Capsule3d` mesh between face-adjacent same-color cells, length 0.574, radi
 
 ### 3.6 Dead-group mist — temp (black) and perma (green)
 
-**Temp-dead (1 turn only).** The instant a mesh hits 7, all its cells enter `TEMP_DEAD`. Shell saturation drops 60 %; core dims to 30 % emissive; a black volumetric mist (raymarched fragment, 32 steps, 3D simplex noise at octave 2, freq 1.4) flows inside the shell at 0.6 units/s. Pipes inside the dead mesh go fully opaque black. Custom `Material` trait impl with `AlphaMode::Opaque + discard-on-noise-threshold`, rendered in `Opaque3d` before `Transmissive3d` so refraction composites correctly.
+**Temp-dead (until the steward's rebuild turn).** The instant a mesh hits 7, all its cells enter `TEMP_DEAD` and the crater smoulders through the opponents' turns until the owning steward rebuilds it (§4.6). Shell saturation drops 60 %; core dims to 30 % emissive; a black volumetric mist (raymarched fragment, 32 steps, 3D simplex noise at octave 2, freq 1.4) flows inside the shell at 0.6 units/s. Pipes inside the dead mesh go fully opaque black. Custom `Material` trait impl with `AlphaMode::Opaque + discard-on-noise-threshold`, rendered in `Opaque3d` before `Transmissive3d` so refraction composites correctly.
 
 **Perma-dead (forever).** After dispersal (§4.6), flagged `PERMA_DEAD` cells take shell `attenuation_color = Verdigris #788C5D`, core hidden, green mist flowing at 0.3 units/s (slower; at rest). Incident pipes drop to Stone `#B0AEA5` × 0.45 alpha, no inner mist. Perma-dead cells are removed from the legal-move set permanently.
 
@@ -182,7 +182,7 @@ T(M) = α·|M|
        ]
 ```
 
-Starting defaults: **α = 0.060, β = 0.080, γ = 0.050, δ = 0.060**. Display normalization: `T_vis = 1 − exp(−max(T, 0) / 1.40)`, clamp `[0, 1]`. Final coefficients land after the empirical resonance sweep (see backlog).
+Defaults: **α = 0.060, β = 0.080, γ = 0.050, δ = 0.062** (δ nudged +0.002 from the starting 0.060 by the BACKLOG #3 resonance sweep so the near-atari pair `(6,5)` clears the trigger — Gap 2). Display normalization: `T_vis = 1 − exp(−max(T, 0) / 1.40)`, clamp `[0, 1]`.
 
 Three defenses, one formula: statistical mechanics (larger thermal mass changes less per packet), information thermodynamics (higher-entropy source dominates lower-entropy receiver), CEG attestation flow (size gradient *is* the attestation gradient).
 
@@ -202,7 +202,7 @@ Crossfade F and k linearly across bands over 600 ms. Per-steward seed pattern fi
 
 ### 4.3 Agent orbits
 
-Spherical coords `(r, θ, φ)` around the node center; `r = 0.62 · shell_radius` at rest. Per-particle phase advances by `dt × orbit_omega`. Wobble adds a perlin-style noise amplitude that scales with `T_vis`. When `δ · min(|M|, |N|) > 0.5 · (α·|M| + γ·|N|)` for a face-pair, one particle per side launches a Hermite arc to a midpoint shell between the two nodes, dwells 800 ms, returns. Resonance direction: **large → small** (heat flows down the gradient; attestations flow down the size gradient).
+Spherical coords `(r, θ, φ)` around the node center; `r = 0.62 · shell_radius` at rest. Per-particle phase advances by `dt × orbit_omega`. Wobble adds a perlin-style noise amplitude that scales with `T_vis`. A face-pair **resonates** when both gates pass — `min(|M|, |N|) ≥ 4` (scale floor: small groups near each other only *vibe*, big groups near each other *excite*; knob `resonance.minMeshSize`) **and** `δ · min(|M|, |N|) > 0.5 · (α·|M| + γ·|N|)`. On resonance, one particle per side launches a Hermite arc to a midpoint shell between the two nodes, dwells 800 ms, returns. Resonance direction: **large → small** (heat flows down the gradient; attestations flow down the size gradient). The scale floor is the BACKLOG #3 Gap-1 fix — the bare condition is scale-free for balanced pairs (size cancels), so without the floor `(1,1)` would resonate like `(6,6)`.
 
 ### 4.4 Camera (N = 5 baseline; distance scales as 1.80 · N)
 
@@ -226,46 +226,47 @@ Camera control via `bevy_panorbit_camera = "0.35"` plus custom systems for the l
 
 The smaller mesh's R-D target is released after merge; the larger keeps its target. Pipe-join receives a one-frame specular pop.
 
-### 4.6 Dispersal — destructive transition
+### 4.6 Dispersal — destructive transition (player-chosen layout)
 
-When a mesh `M` of size `|M| ≥ 7` is created:
+When a mesh `M` of size `|M| ≥ 7` is created, the steward *rebuilds their own wreckage* on their next turn:
 
-**Step 1 — immediate.** All cells of `M` enter `TEMP_DEAD` (§3.6 black mist). Pipes severed. Steward's turn ends.
+**Step 1 — immediate.** All cells of `M` enter `TEMP_DEAD` (§3.6 black mist). Pipes severed. The steward's turn ends. The crater smoulders through the opponents' turns.
 
-**Step 2 — start of next steward's turn.** Run **Algorithm A (Morton-greedy)**:
+**Step 2 — the steward's next turn (the rebuild turn).** In one move the steward both **lays out the crater** and **places a new stone** elsewhere. The layout assigns each crater cell to live (their color) or perma-dead, subject to two rules:
+
+1. **Count floor (the locked score spine).** At least `floor = k + (1 if r=1 else 0)` perma-dead, where `k = N÷3`, `r = N mod 3`. A clever layout can never score *below* the table — only the *placement* of the spacers is the player's, not the amount.
+2. **Legality.** The live cells the steward keeps may not form a connected component of `7` or more — dispersal can never hand back an already-collapse-sized mesh.
+
+Human and agent players choose the layout (constrained to the crater's own cells); **Computers and any no-choice caller get the deterministic auto layout, "Algorithm A (Morton-greedy)":**
 
 1. Order cells of `M` in 3D Morton (Z-order) sequence: `c[0], c[1], …, c[N-1]`.
-2. Walk `i = 0, 3, 6, …` while `i + 2 ≤ N`:
-   - Try LIVE-pair `c[i]` with `c[i+1]` if face-adjacent.
-   - If not, scan forward for the lex-smallest unmarked face-adjacent neighbor of `c[i]`; swap into position `i+1`.
-   - Mark `c[i], c[i+1]` as `LIVE_PAIR`. Mark `c[i+2]` as `PERMA_DEAD`.
-3. Remainder `r = N mod 3`:
-   - `r = 0` → done.
-   - `r = 1` → mark `c[N-1]` as `PERMA_DEAD`.
-   - `r = 2` → mark `c[N-2], c[N-1]` as `LIVE_PAIR` if face-adjacent; else both `PERMA_DEAD`.
-4. Validate separation: no LIVE_PAIR may contain a cell face-adjacent to another LIVE_PAIR's cell. Demote the later pair if so.
+2. Walk `i = 0, 3, 6, …` while `i + 2 < N` (0-based: the last triple consumes `c[N-3..=N-1]`):
+   - Pair `c[i]` with `c[i+1]` if face-adjacent; else scan forward for the lex-smallest unconsumed face-adjacent neighbor of `c[i]` and swap it into `i+1`.
+   - `c[i], c[i+1]` → candidate live pair; `c[i+2]` → perma-dead.
+3. Remainder `r = N mod 3`: `r=1` → `c[N-1]` perma-dead; `r=2` → `c[N-2], c[N-1]` a live pair if face-adjacent, else both perma-dead.
+4. **Narrow separation guard.** Demote a candidate live pair to perma-dead **only if** keeping it would connect live cells into a component of `≥ 7`. (This replaces the original wholesale "demote any touching pair" step, which BACKLOG #4 found destroyed the count table on dense blobs.)
 
-Determinism: Morton order is canonical, swap rule is lex-greedy. Same dead mesh → same dispersal.
+Determinism: Morton order is canonical, the swap rule is lex-greedy, the guard is order-deterministic. Same crater → same auto layout (replay-safe across targets). The chosen or auto-resolved perma cells are recorded in the move log so a replay reproduces the exact layout.
 
-**Step 3 — animated, ~1200 ms total.**
+**Step 3 — animated, ~1200 ms total.** (timings unchanged)
 
 | transition | timing |
 |---|---|
-| TEMP_DEAD → LIVE_PAIR | mist fades 600 ms; core reappears 400 ms |
+| TEMP_DEAD → LIVE | mist fades 600 ms; core reappears 400 ms |
 | TEMP_DEAD → PERMA_DEAD | mist cross-fades black → green over 800 ms; shell `attenuation_color` lerps to Verdigris |
 | `permadead_count` legend tick-up | per-cell, 50 ms stagger, 800 ms total |
-| Pipes severed → new live-pair pipes | 400 ms extrude |
+| Pipes severed → new live pipes | 400 ms extrude |
 
-**Strategic count table** (k = N ÷ 3, r = N mod 3, perma-dead = `k + (1 if r=1 else 0)`):
+**Strategic count floor** (k = N ÷ 3, r = N mod 3, min perma-dead = `k + (1 if r=1 else 0)`):
 
-| N | k | r | live pairs | perma-dead | total |
+| N | k | r | live | min perma-dead | total |
 |---|---|---|---|---|---|
-| 7 | 2 | 1 | 2 | 3 | 7 |
-| 8 | 2 | 2 | 3 | 2 | 8 |
-| 13 | 4 | 1 | 4 | 5 | 13 |
-| 14 | 4 | 2 | 5 | 4 | 14 |
+| 7 | 2 | 1 | 4 | 3 | 7 |
+| 8 | 2 | 2 | 6 | 2 | 8 |
+| 13 | 4 | 1 | 8 | 5 | 13 |
+| 14 | 4 | 2 | 10 | 4 | 14 |
 
-The `r = 2` asymmetry (N = 8, 11, 14 cost less than the `r = 1` neighbors) is the strategic spine.
+The `r = 2` asymmetry (N = 8, 11, 14 cost less than the `r = 1` neighbors) is the strategic spine. On small collapses (N = 7, 8) the floor is always achievable (live cells can't reach 7); on large collapses, legality may force a few extra perma-dead beyond the floor. A skilled player chooses the spacer positions to hit the floor exactly and shape the surviving live groups; the auto chooser matches the floor for N = 7 and stays at-or-above it otherwise.
 
 ### 4.7 Endgame — mourn, celebrate, wild
 
@@ -296,7 +297,7 @@ Entry (mesh just grew to 6): orbit-speed lerps 400 ms ease-in-out; Kuramoto phas
 
 ### 4.10 Cell states, size-1 meshes, and the no-capture invariant
 
-The five cell states are exhaustive: `EMPTY` (ghost lattice, §3.5), `LIVE(steward)`, `TEMP_DEAD(steward)` (1 turn, §3.6), `PERMA_DEAD` (forever, neutral, §3.6). A *mesh* is a connected component of one steward's `LIVE` cells under face-adjacency; `EMPTY` is a distinct state, never a zero-size mesh.
+The five cell states are exhaustive: `EMPTY` (ghost lattice, §3.5), `LIVE(steward)`, `TEMP_DEAD(steward)` (smoulders until the owner's rebuild turn, §4.6), `PERMA_DEAD` (forever, neutral, §3.6). A *mesh* is a connected component of one steward's `LIVE` cells under face-adjacency; `EMPTY` is a distinct state, never a zero-size mesh.
 
 **Size-1 meshes are first-class.** Every placement is born a `|M| = 1` mesh until it links to a same-color face-neighbor. The temperature formula (§4.1) is defined at `|M| = 1`; dispersal *creates* `|M| = 2` live pairs. There is no minimum group size and no "lone stone is clear" demotion.
 

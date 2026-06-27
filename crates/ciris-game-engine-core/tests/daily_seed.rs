@@ -1,8 +1,6 @@
 //! Tests for daily-seed derivation and replay determinism (BACKLOG #2).
 
-use ciris_game_engine_core::{
-    derive_daily_seed, Difficulty, GameState, Move, MoveRecord,
-};
+use ciris_game_engine_core::{derive_daily_seed, Difficulty, GameState, Move, MoveRecord};
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
 
@@ -28,11 +26,7 @@ fn k_in_range_and_slot0_is_easy() {
             ds.k,
             date
         );
-        assert_eq!(
-            ds.roster[0],
-            Difficulty::Easy,
-            "slot 0 must always be Easy"
-        );
+        assert_eq!(ds.roster[0], Difficulty::Easy, "slot 0 must always be Easy");
     }
 }
 
@@ -130,7 +124,10 @@ fn from_daily_seed_places_perma_dead_matching_derive() {
 
 /// Play up to `max_moves` random moves on a 5×5×5 board and return the
 /// recorded history and final outcome.
-fn play_random_moves(seed: [u8; 32], max_moves: usize) -> (Vec<MoveRecord>, ciris_game_engine_core::Outcome) {
+fn play_random_moves(
+    seed: [u8; 32],
+    max_moves: usize,
+) -> (Vec<MoveRecord>, ciris_game_engine_core::Outcome) {
     let mut gs = GameState::new(5, seed);
     let mut move_rng = ChaCha8Rng::from_seed(seed);
 
@@ -156,8 +153,13 @@ fn play_random_moves(seed: [u8; 32], max_moves: usize) -> (Vec<MoveRecord>, ciri
 /// final outcome.
 fn replay_move_log(seed: [u8; 32], log: &[MoveRecord]) -> ciris_game_engine_core::Outcome {
     let mut gs = GameState::new(5, seed);
-    for &rec in log {
-        let _ = gs.apply_move(Move::new(rec.coord.i, rec.coord.j, rec.coord.k));
+    for rec in log {
+        let mv = if rec.dispersal.is_empty() {
+            Move::place(rec.coord)
+        } else {
+            Move::rebuild(rec.coord, rec.dispersal.clone())
+        };
+        let _ = gs.apply_move(mv);
     }
     gs.outcome()
 }
@@ -233,6 +235,9 @@ fn replay_determinism_with_daily_perma_dead() {
             a.board_state_hash, b.board_state_hash,
             "daily-seed pair {i}: board_state_hash differs on replay"
         );
-        assert_eq!(a.total, b.total, "daily-seed pair {i}: total differs on replay");
+        assert_eq!(
+            a.total, b.total,
+            "daily-seed pair {i}: total differs on replay"
+        );
     }
 }
