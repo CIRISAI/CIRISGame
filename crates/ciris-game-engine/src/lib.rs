@@ -23,7 +23,13 @@ pub use ciris_game_engine_core::*;
 pub mod palette;
 
 #[cfg(feature = "render")]
+mod effects;
+
+#[cfg(feature = "render")]
 mod environment;
+
+#[cfg(feature = "render")]
+mod geometry;
 
 #[cfg(feature = "render")]
 mod lighting;

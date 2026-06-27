@@ -3,7 +3,7 @@
 //! headless build.
 //!
 //! The board is drawn from one persistent entity table built once at startup:
-//! every cell owns a *frame* entity (glass shell or faint ghost marker), a
+//! every cell owns a *frame* entity (glass shell or ghost wireframe), a
 //! *core* entity (the emissive steward sphere, hidden unless the cell is live),
 //! and a *ring* entity (Kaolin's Ink outline, hidden unless that cell is a live
 //! Kaolin core). [`sync_board`] rewrites those entities' mesh/material/visibility
@@ -21,18 +21,18 @@ use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::prelude::*;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
-use crate::{environment, lighting, materials, palette, screensaver};
+use crate::{effects, environment, geometry, lighting, materials, palette, screensaver};
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
 
-/// Glass shell radius (DESIGN_BRIEF §3.1).
-const SHELL_RADIUS: f32 = 0.42;
+/// Glass shell radius (DESIGN_BRIEF §3.1). `pub(crate)` so the effects layer can
+/// size orbit radii and pipe spans against it.
+pub(crate) const SHELL_RADIUS: f32 = 0.42;
 /// Inner core radius (DESIGN_BRIEF §3.1).
 const CORE_RADIUS: f32 = 0.25;
-/// Faint ghost-cell marker radius (placeholder for the §3.5 wireframe).
-const GHOST_RADIUS: f32 = 0.09;
-/// Bloom-layer index for emissive cores (DESIGN_BRIEF §2.3 / §3.3).
-const BLOOM_LAYER: usize = 1;
+/// Bloom-layer index for emissive cores (DESIGN_BRIEF §2.3 / §3.3). Shared with
+/// the effects layer so motes glow on the same layer.
+pub(crate) const BLOOM_LAYER: usize = 1;
 
 /// Per-steward Gray-Scott seed PNGs (DESIGN_BRIEF §4.2), in steward-slot order.
 const GS_SEED_PATHS: [&str; 4] = [
@@ -61,7 +61,7 @@ struct RenderAssets {
 /// Per-cell entity table, indexed by linear board index.
 #[derive(Resource)]
 struct CellEntities {
-    /// The shell-or-ghost frame entity for each cell.
+    /// The glass-shell-or-ghost-wireframe frame entity for each cell.
     frame: Vec<Entity>,
     /// The emissive core entity for each cell (hidden unless the cell is live).
     core: Vec<Entity>,
@@ -109,14 +109,23 @@ pub fn run_app() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (bake_gs_patterns, (screensaver::drive, sync_board).chain()),
+            (
+                bake_gs_patterns,
+                // GameState → board entities → effect parameters, in order.
+                (screensaver::drive, sync_board, effects::sync_effects).chain(),
+                // Per-frame motion reads the parameters above (one-frame latency
+                // on a fresh board is imperceptible at the screensaver cadence).
+                effects::animate_motes,
+                effects::breathe_cores,
+            ),
         )
         .run();
 }
 
 /// World-space center of lattice cell `(i, j, k)` for an `n³` board:
-/// `world = coord − (n−1)/2` per axis (DESIGN_BRIEF §3.1).
-fn cell_world_pos(c: Coord, n: u8) -> Vec3 {
+/// `world = coord − (n−1)/2` per axis (DESIGN_BRIEF §3.1). `pub(crate)` so the
+/// effects layer can cache cell centres for orbits and pipes.
+pub(crate) fn cell_world_pos(c: Coord, n: u8) -> Vec3 {
     let half = (n as f32 - 1.0) / 2.0;
     Vec3::new(c.i as f32 - half, c.j as f32 - half, c.k as f32 - half)
 }
@@ -166,7 +175,7 @@ fn setup(
     // ── shared meshes + materials (DESIGN_BRIEF §3.1/§3.2/§3.3/§3.6) ─────
     let assets = RenderAssets {
         shell_mesh: meshes.add(Sphere::new(SHELL_RADIUS).mesh().ico(4).unwrap()),
-        ghost_mesh: meshes.add(Sphere::new(GHOST_RADIUS).mesh().ico(2).unwrap()),
+        ghost_mesh: meshes.add(geometry::wireframe_mesh()),
         // UV sphere for the core so the Gray-Scott pattern maps cleanly.
         core_mesh: meshes.add(Sphere::new(CORE_RADIUS).mesh().uv(48, 32)),
         ring_mesh: meshes.add(
@@ -204,7 +213,7 @@ fn setup(
     let mut ring = Vec::with_capacity(count);
     for idx in 0..count {
         let pos = cell_world_pos(board.0.board.coord(idx), n);
-        // Frame starts as a ghost marker; sync_board paints the real state.
+        // Frame starts as a ghost wireframe; sync_board paints the real state.
         frame.push(
             commands
                 .spawn((
@@ -240,6 +249,10 @@ fn setup(
                 .id(),
         );
     }
+
+    // Tier-B life: pipes, agent motes, atari breath — tags each core entity and
+    // seeds the per-cell animation parameters (DESIGN_BRIEF §3.4/§3.9/§4.9).
+    effects::setup_effects(&mut commands, &mut meshes, &mut materials, n, count, &core);
 
     commands.insert_resource(assets);
     commands.insert_resource(CellEntities { frame, core, ring });
@@ -287,7 +300,7 @@ fn sync_board(
         // Kaolin's rim only shows for a live Kaolin core; default it off.
         let mut ring_visible = false;
         match gs.board.get(idx) {
-            // Empty → faint ghost marker, core hidden (DESIGN_BRIEF §3.5).
+            // Empty → ghost wireframe, core hidden (DESIGN_BRIEF §3.5).
             CellState::Empty => {
                 commands.entity(frame).insert((
                     Mesh3d(assets.ghost_mesh.clone()),

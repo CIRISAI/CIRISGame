@@ -100,9 +100,14 @@ pub fn permadead() -> StandardMaterial {
     }
 }
 
-/// Faint ghost marker for empty cells (DESIGN_BRIEF §3.5 placeholder).
+/// Ghost-cell wireframe material (DESIGN_BRIEF §3.5). Slate at 18 % alpha, unlit
+/// so the rhombic-dodecahedron line mesh ([`crate::geometry`]) reads as a calm
+/// lattice scaffold rather than a lit surface.
 ///
-/// TODO §3.5: `bevy_polyline` rhombic-dodecahedron wireframe with distance fade.
+/// `bevy_polyline` (which carries the §3.5 per-pixel distance fade for free) has
+/// no Bevy-0.19 release — it targets 0.17 — so this falls back to a built-in
+/// `LineList` mesh + this material. The distance fade is therefore deferred until
+/// either the crate catches up or a small custom WGSL fade material lands.
 pub fn ghost() -> StandardMaterial {
     StandardMaterial {
         base_color: palette::SLATE_SRGB.with_alpha(0.18),
@@ -110,6 +115,67 @@ pub fn ghost() -> StandardMaterial {
         unlit: true,
         ..default()
     }
+}
+
+/// Glass pipe between two face-adjacent same-steward live cells (DESIGN_BRIEF
+/// §3.4). The same Borosilicate lens as the [`glass`] shell, but with the
+/// `attenuation_color` biased 25 % toward the steward pigment so a mesh's pipes
+/// pick up its colour as light passes through them.
+pub fn pipe(steward: Steward) -> StandardMaterial {
+    let slot = steward.slot() as usize;
+    StandardMaterial {
+        base_color: palette::BOROSILICATE_SRGB,
+        specular_transmission: 0.9,
+        ior: 1.50,
+        thickness: 0.10,
+        perceptual_roughness: 0.06,
+        metallic: 0.0,
+        reflectance: 0.45,
+        attenuation_color: mix_linear(
+            palette::BOROSILICATE_LINEAR,
+            palette::STEWARD_LINEAR[slot],
+            0.25,
+        ),
+        attenuation_distance: 1.4,
+        ..default()
+    }
+}
+
+/// Base agent-mote emissive intensity before the §4.9 breath modulation.
+pub const MOTE_EMISSIVE: f32 = 2.4;
+
+/// Emissive colour of an agent mote for steward `slot`, scaled by `factor`
+/// (DESIGN_BRIEF §3.9 / §4.3). The pigment is lifted ~15 % toward white (the
+/// §3.9 OKLCH L*+8 % shift, approximated in linear RGB) so the motes read a
+/// touch brighter than the core they orbit; `factor` carries the §4.9 atari
+/// breath (`1.0` at rest). The effects layer drives each mote's own material
+/// with this so the breath can pulse one mesh without touching its neighbours.
+pub fn mote_emissive(slot: usize, factor: f32) -> LinearRgba {
+    let glow = mix_linear(palette::STEWARD_LINEAR[slot], Color::WHITE, 0.15);
+    glow.to_linear() * (MOTE_EMISSIVE * factor)
+}
+
+/// Verdigris foreshadowing ring for an atari cell (DESIGN_BRIEF §3.9 / §4.9). A
+/// faint translucent torus that fades the green mist's colour in before the
+/// destructive transition. Unlit + 25 % alpha; shown only for `|M| = 6` cells.
+pub fn atari_ring() -> StandardMaterial {
+    StandardMaterial {
+        base_color: palette::STEWARD_VERDIGRIS_SRGB.with_alpha(0.25),
+        emissive: palette::STEWARD_VERDIGRIS_LINEAR.to_linear() * 0.6,
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    }
+}
+
+/// Linear-space blend of two colours, `t` of the way from `a` to `b`.
+fn mix_linear(a: Color, b: Color, t: f32) -> Color {
+    let (a, b) = (a.to_linear(), b.to_linear());
+    Color::LinearRgba(LinearRgba::rgb(
+        a.red + (b.red - a.red) * t,
+        a.green + (b.green - a.green) * t,
+        a.blue + (b.blue - a.blue) * t,
+    ))
 }
 
 /// Bake a raw Gray-Scott seed PNG into a grayscale pigment mask, in place.
