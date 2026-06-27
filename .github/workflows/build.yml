@@ -3,16 +3,18 @@ name: Build and Deploy
 # CIRISGame primary build pipeline. Sibling-shaped to CIRISServer's build
 # matrix — native desktop binaries + WASM bundles + Android cross-compiles.
 #
-# Platform count: 9 active runner lanes across 10 target platforms.
+# Platform count: 10 active runner lanes across 10 target platforms.
 #   Native desktop (5): linux x86_64, linux aarch64, macOS arm64, macOS x86_64, windows x64
-#   WASM browser   (1): wasm32-unknown-unknown  (also the iOS WKWebView payload)
+#   WASM browser   (2): wasm32-unknown-unknown × {webgpu, webgl2}  (CLAUDE.md §build)
 #   WASM Worker    (1): wasm32-wasip1  (daily-seed replay Cloudflare Worker)
 #   Android        (2): arm64-v8a, armeabi-v7a  (NDK cross, continue-on-error)
-#   iOS            (—): reuses the wasm32-unknown-unknown bundle; no separate runner lane
+#   iOS            (—): reuses the WASM browser bundles via WKWebView
 #
-# Jobs guarded by `if-no-files-found: warn` and BUILD_MANIFEST.txt sentinel
-# while the Bevy view crate (ciris-game-engine) and the game binary do not
-# yet exist. The core (ciris-game-engine-core) compiles on all targets today.
+# Feature discipline (avoids the webgpu+webgl2 mutual-exclusion clash):
+#   native desktop → cargo build -p ciris-game-engine              (default = native)
+#   wasm browser   → cargo build -p ciris-game-engine --no-default-features --features {webgpu|webgl2}
+#   wasm32-wasip1  → cargo build -p ciris-game-engine-core         (no_std lib only)
+#   android        → cargo build -p ciris-game-engine-core         (native view won't cross-compile)
 
 on:
   push:
@@ -39,6 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # Bevy's native feature (default) needs the Linux window/audio stack.
       - name: Install renderer build deps (Linux)
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
@@ -50,7 +53,7 @@ jobs:
           cache-bin: false
       - run: cargo check --all-targets
 
-  # ── Focused cargo test on Linux (OS matrix coverage is in ci.yml) ─────────
+  # ── Focused test run — core only (view crate has no tests) ────────────────
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -60,18 +63,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install renderer build deps (Linux)
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev libx11-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config
       - uses: Swatinem/rust-cache@v2
         continue-on-error: true
         with:
           cache-bin: false
-      - run: cargo test --all --verbose
+      - run: cargo test -p ciris-game-engine-core --verbose
 
-  # ── Platform build matrix (9 active lanes) ────────────────────────────────
+  # ── Platform build matrix (10 active lanes) ───────────────────────────────
   build:
     name: Build (${{ matrix.name }})
     needs: [typecheck]
@@ -83,22 +81,72 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Native desktop ─────────────────────────────────────────────────────
-          - { os: ubuntu-latest,     name: "Linux x86_64",  target: x86_64-unknown-linux-gnu,  kind: native }
-          - { os: ubuntu-24.04-arm,  name: "Linux aarch64", target: aarch64-unknown-linux-gnu, kind: native }
-          - { os: macos-latest,      name: "macOS arm64",   target: aarch64-apple-darwin,      kind: native }
-          - { os: macos-15-intel,    name: "macOS x86_64",  target: x86_64-apple-darwin,       kind: native }
-          - { os: windows-latest,    name: "Windows x64",   target: x86_64-pc-windows-msvc,   kind: native }
-          # WASM browser bundle ─────────────────────────────────────────────────
-          # Also the iOS WKWebView payload — no separate iOS runner lane needed.
-          - { os: ubuntu-latest,     name: "WASM browser",  target: wasm32-unknown-unknown,    kind: wasm-browser }
-          # WASM replay Worker (Cloudflare wasm32-wasip1) ───────────────────────
-          - { os: ubuntu-latest,     name: "WASM Worker",   target: wasm32-wasip1,             kind: wasm-wasip1 }
-          # Android NDK cross-compiles ──────────────────────────────────────────
-          - { os: ubuntu-latest, name: "Android arm64", target: aarch64-linux-android,
-              kind: android, abi: arm64-v8a,   clang: aarch64-linux-android24-clang,    experimental: true }
-          - { os: ubuntu-latest, name: "Android armv7", target: armv7-linux-androideabi,
-              kind: android, abi: armeabi-v7a, clang: armv7a-linux-androideabi24-clang, experimental: true }
+          # Native desktop (5 targets) ────────────────────────────────────────
+          - os: ubuntu-latest
+            name: "Linux x86_64"
+            target: x86_64-unknown-linux-gnu
+            kind: native
+            artifact: ciris-game-linux-x86_64
+          - os: ubuntu-24.04-arm
+            name: "Linux aarch64"
+            target: aarch64-unknown-linux-gnu
+            kind: native
+            artifact: ciris-game-linux-aarch64
+          - os: macos-latest
+            name: "macOS arm64"
+            target: aarch64-apple-darwin
+            kind: native
+            artifact: ciris-game-macos-arm64
+          - os: macos-15-intel
+            name: "macOS x86_64"
+            target: x86_64-apple-darwin
+            kind: native
+            artifact: ciris-game-macos-x86_64
+          - os: windows-latest
+            name: "Windows x64"
+            target: x86_64-pc-windows-msvc
+            kind: native
+            artifact: ciris-game-windows-x64
+          # WASM browser bundles (2 lanes — webgpu primary, webgl2 fallback) ──
+          # Bevy issue #13168 blocks a single binary from runtime backend
+          # selection, so both are built separately (CLAUDE.md stack note).
+          # Both artifacts double as the iOS WKWebView payload.
+          - os: ubuntu-latest
+            name: "WASM webgpu"
+            target: wasm32-unknown-unknown
+            kind: wasm-browser
+            feature: webgpu
+            artifact: ciris-game-wasm32-webgpu
+          - os: ubuntu-latest
+            name: "WASM webgl2"
+            target: wasm32-unknown-unknown
+            kind: wasm-browser
+            feature: webgl2
+            artifact: ciris-game-wasm32-webgl2
+          # WASM replay Worker (Cloudflare wasm32-wasip1) ─────────────────────
+          - os: ubuntu-latest
+            name: "WASM Worker"
+            target: wasm32-wasip1
+            kind: wasm-wasip1
+            artifact: ciris-game-wasm32-wasip1
+          # Android NDK cross-compiles (core only; native Bevy view does not
+          # cross-compile to Android NDK targets) ─────────────────────────────
+          - os: ubuntu-latest
+            name: "Android arm64"
+            target: aarch64-linux-android
+            kind: android
+            abi: arm64-v8a
+            clang: aarch64-linux-android24-clang
+            artifact: ciris-game-android-arm64-v8a
+            experimental: true
+          - os: ubuntu-latest
+            name: "Android armv7"
+            target: armv7-linux-androideabi
+            kind: android
+            abi: armeabi-v7a
+            clang: armv7a-linux-androideabi24-clang
+            artifact: ciris-game-android-armeabi-v7a
+            experimental: true
     steps:
       - uses: actions/checkout@v4
 
@@ -106,7 +154,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # Linux renderer deps (native desktop lane only) ─────────────────────────
+      # Linux renderer deps: Bevy's native feature requires the X/Wayland/audio
+      # stack. macOS and Windows pull their frameworks through cargo directly.
       - name: Install renderer build deps (Linux native)
         if: runner.os == 'Linux' && matrix.kind == 'native'
         run: |
@@ -114,8 +163,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev libx11-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config
 
-      # Android NDK + cross-compiler env ───────────────────────────────────────
-      - name: Set up Android NDK and cross-compiler
+      # Android NDK + cross-compiler env ──────────────────────────────────────
+      - name: Set up Android NDK
         if: matrix.kind == 'android'
         uses: nttld/setup-ndk@v1
         id: setup-ndk
@@ -140,9 +189,10 @@ jobs:
         continue-on-error: true
         with:
           cache-bin: false
-          key: build-${{ matrix.target }}
+          key: build-${{ matrix.artifact }}
 
-      # wasm-bindgen-cli (browser wasm lane only) ──────────────────────────────
+      # wasm-bindgen-cli: required for the Bevy WASM binary → JS/wasm bundle step.
+      # Pinned to the version that matches Bevy 0.19's wasm-bindgen dependency.
       - name: Install wasm-bindgen-cli
         if: matrix.kind == 'wasm-browser'
         uses: nick-fields/retry@v3
@@ -152,31 +202,39 @@ jobs:
           retry_wait_seconds: 30
           command: cargo install wasm-bindgen-cli --version 0.2.95 --locked
 
-      # Build ──────────────────────────────────────────────────────────────────
-      - name: Build (native)
+      # ── Build ──────────────────────────────────────────────────────────────
+      - name: Build (native — default/native feature)
         if: matrix.kind == 'native'
         shell: bash
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build -p ciris-game-engine --release --target ${{ matrix.target }}
 
-      - name: Build (wasm32-unknown-unknown browser bundle)
+      - name: Build (wasm32 browser — ${{ matrix.feature }})
         if: matrix.kind == 'wasm-browser'
         shell: bash
-        run: cargo build --release --target wasm32-unknown-unknown
+        # webgpu and webgl2 are mutually exclusive wgpu backends; always build
+        # with --no-default-features to prevent native pulling in x11/wayland.
+        run: >-
+          cargo build -p ciris-game-engine
+          --no-default-features --features ${{ matrix.feature }}
+          --release --target wasm32-unknown-unknown
 
-      - name: Build (wasm32-wasip1 replay Worker)
+      - name: Build (wasm32-wasip1 replay Worker core)
         if: matrix.kind == 'wasm-wasip1'
         shell: bash
-        # The daily-seed replay Cloudflare Worker lives in ciris-game-engine-core
-        # (no_std, wasm32-wasip1 target). The wasi-replay feature is wired when
-        # the Worker binary target is added; until then this validates the path.
-        run: cargo build --release --target wasm32-wasip1
+        # Builds the no_std core for the daily-seed Cloudflare Worker.
+        # A [[bin]] wasi-replay target will be added when the Worker binary is
+        # wired (CLAUDE.md §build); until then this validates the cross-compile.
+        run: cargo build -p ciris-game-engine-core --release --target wasm32-wasip1
 
-      - name: Build (Android NDK cross)
+      - name: Build (Android NDK cross — core only)
         if: matrix.kind == 'android'
         shell: bash
-        run: cargo build --release --target ${{ matrix.target }}
+        # The native Bevy view (x11/wayland) does not cross-compile to Android
+        # NDK. Build the no_std core; the game view will come via a WebView
+        # wrapper of the wasm32-unknown-unknown bundle.
+        run: cargo build -p ciris-game-engine-core --release --target ${{ matrix.target }}
 
-      # Stage artifacts ────────────────────────────────────────────────────────
+      # ── Stage artifacts ───────────────────────────────────────────────────
       - name: Stage native binary
         if: matrix.kind == 'native'
         shell: bash
@@ -187,30 +245,24 @@ jobs:
           if [ -f "$BIN" ]; then
             if [ "${{ runner.os }}" != "Windows" ]; then strip "$BIN" || true; fi
             cp "$BIN" stage/
-          else
-            # Game binary (ciris-game-engine view crate) not yet built.
-            # Copy lib artifacts as build-proof; game binary comes with Bevy crate.
-            find "target/${{ matrix.target }}/release" -maxdepth 1 \
-              \( -name "*.rlib" -o -name "*.a" -o -type f -perm -u+x \) \
-              -exec cp {} stage/ \; 2>/dev/null || true
           fi
-          # Sentinel ensures a non-empty upload while the binary does not yet exist.
           echo "target=${{ matrix.target }} date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > stage/BUILD_MANIFEST.txt
           ls -lh stage/
 
-      - name: Stage wasm browser bundle
+      - name: Stage wasm browser bundle (${{ matrix.feature }})
         if: matrix.kind == 'wasm-browser'
         shell: bash
         run: |
           mkdir -p stage
-          # wasm-bindgen runs only when the view crate produces a binary .wasm.
-          # The core library alone does not; the loop skips cleanly if empty.
-          for w in target/wasm32-unknown-unknown/release/*.wasm; do
-            [ -f "$w" ] || continue
-            wasm-bindgen --target web --out-dir stage "$w" || true
-          done
+          # The Bevy WASM binary is ciris-game.wasm; wasm-bindgen produces the
+          # JS glue + the final _bg.wasm that the browser loader fetches.
+          w="target/wasm32-unknown-unknown/release/ciris-game.wasm"
+          if [ -f "$w" ]; then
+            wasm-bindgen --target web --out-dir stage "$w"
+          fi
           if [ -d web ]; then cp -R web/* stage/; fi
-          echo "target=wasm32-unknown-unknown date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > stage/BUILD_MANIFEST.txt
+          echo "target=wasm32-unknown-unknown feature=${{ matrix.feature }} date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > stage/BUILD_MANIFEST.txt
           ls -lh stage/
 
       - name: Stage wasm32-wasip1 Worker
@@ -240,9 +292,8 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ciris-game-${{ matrix.target }}
+          name: ${{ matrix.artifact }}
           path: stage/
-          # warn (not error) while the game binary / wasm bundle are pending;
-          # BUILD_MANIFEST.txt ensures the path is never empty in practice.
+          # warn keeps the matrix green even when a lane's output is incomplete.
           if-no-files-found: warn
           retention-days: 30
