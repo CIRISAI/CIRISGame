@@ -1,0 +1,15 @@
+# CIRISGame workspace.
+#
+# The deterministic game logic lives in `ciris-game-engine-core` (no_std + alloc),
+# so it can target wasm32-unknown-unknown (browser), wasm32-wasip1 (daily-seed
+# replay Worker), and native CI identically. The Bevy view crate
+# (`ciris-game-engine`) will be added as a workspace member and will re-export
+# the core unchanged.
+[workspace]
+resolver = "2"
+members = ["crates/ciris-game-engine-core"]
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/CIRISAI/CIRISGame"
