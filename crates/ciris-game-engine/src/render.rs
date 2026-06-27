@@ -3,22 +3,26 @@
 //! headless build.
 //!
 //! The board is drawn from one persistent entity table built once at startup:
-//! every cell owns a *frame* entity (glass shell or faint ghost marker) and a
-//! *core* entity (the emissive steward sphere, hidden unless the cell is live).
-//! [`sync_board`] rewrites those entities' mesh/material/visibility from
-//! [`BoardResource`] whenever [`BoardDirty`] is set, so the screensaver driver
-//! (`screensaver.rs`) only has to flip a flag after each move.
+//! every cell owns a *frame* entity (glass shell or faint ghost marker), a
+//! *core* entity (the emissive steward sphere, hidden unless the cell is live),
+//! and a *ring* entity (Kaolin's Ink outline, hidden unless that cell is a live
+//! Kaolin core). [`sync_board`] rewrites those entities' mesh/material/visibility
+//! from [`BoardResource`] whenever [`BoardDirty`] is set, so the screensaver
+//! driver (`screensaver.rs`) only has to flip a flag after each move.
+//!
+//! Material/lighting/environment construction lives in sibling modules
+//! ([`crate::materials`], [`crate::lighting`], [`crate::environment`]); this
+//! file owns geometry sizing, the entity table, and the sync.
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::Hdr;
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::light::GlobalAmbientLight;
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::prelude::*;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
-use crate::screensaver;
-use crate::{palette, seed_from_counter, BoardResource};
+use crate::{environment, lighting, materials, palette, screensaver};
+use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
 
 /// Glass shell radius (DESIGN_BRIEF §3.1).
@@ -27,10 +31,16 @@ const SHELL_RADIUS: f32 = 0.42;
 const CORE_RADIUS: f32 = 0.25;
 /// Faint ghost-cell marker radius (placeholder for the §3.5 wireframe).
 const GHOST_RADIUS: f32 = 0.09;
-/// Default core emissive intensity (DESIGN_BRIEF §3.3, range [0.4, 1.8]).
-const CORE_EMISSIVE: f32 = 0.6;
 /// Bloom-layer index for emissive cores (DESIGN_BRIEF §2.3 / §3.3).
 const BLOOM_LAYER: usize = 1;
+
+/// Per-steward Gray-Scott seed PNGs (DESIGN_BRIEF §4.2), in steward-slot order.
+const GS_SEED_PATHS: [&str; 4] = [
+    "textures/gs-seed-sienna.png",
+    "textures/gs-seed-lapis.png",
+    "textures/gs-seed-verdigris.png",
+    "textures/gs-seed-kaolin.png",
+];
 
 /// Shared mesh + material handles, built once at startup and cloned per cell.
 #[derive(Resource)]
@@ -38,10 +48,12 @@ struct RenderAssets {
     shell_mesh: Handle<Mesh>,
     ghost_mesh: Handle<Mesh>,
     core_mesh: Handle<Mesh>,
+    ring_mesh: Handle<Mesh>,
     glass_mat: Handle<StandardMaterial>,
     tempdead_mat: Handle<StandardMaterial>,
     permadead_mat: Handle<StandardMaterial>,
     ghost_mat: Handle<StandardMaterial>,
+    ring_mat: Handle<StandardMaterial>,
     /// Emissive core material per steward slot (0..=3).
     core_mats: [Handle<StandardMaterial>; 4],
 }
@@ -53,6 +65,16 @@ struct CellEntities {
     frame: Vec<Entity>,
     /// The emissive core entity for each cell (hidden unless the cell is live).
     core: Vec<Entity>,
+    /// Kaolin's Ink outline (hidden unless the cell is a live Kaolin core).
+    ring: Vec<Entity>,
+}
+
+/// Handles to the Gray-Scott seed images, baked to pigment masks once loaded.
+#[derive(Resource)]
+struct GsPatterns {
+    handles: [Handle<Image>; 4],
+    /// True once every seed PNG has loaded and been baked in place.
+    ready: bool,
 }
 
 /// Set whenever the board changes; [`sync_board`] consumes it. Starts `true` so
@@ -85,7 +107,10 @@ pub fn run_app() {
         .insert_resource(screensaver::ScreensaverState::new())
         .insert_resource(screensaver::AiRng::new(0))
         .add_systems(Startup, setup)
-        .add_systems(Update, (screensaver::drive, sync_board).chain())
+        .add_systems(
+            Update,
+            (bake_gs_patterns, (screensaver::drive, sync_board).chain()),
+        )
         .run();
 }
 
@@ -100,6 +125,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
     board: Res<BoardResource>,
 ) {
     let n = board.0.board.n;
@@ -117,7 +143,7 @@ fn setup(
         Hdr,
         Tonemapping::AgX,
         Bloom {
-            intensity: 0.15,
+            intensity: 0.18,
             composite_mode: BloomCompositeMode::EnergyConserving,
             ..default()
         },
@@ -127,57 +153,55 @@ fn setup(
         },
     ));
 
-    // ── lighting rig, N = 5 baseline scaled by N/5 (DESIGN_BRIEF §2.2) ───
-    // TODO §2.2: calibrate illuminance + add the hemispheric sky gradient and
-    // the Skybox/IBL horizon dome (§3.8). Directional stand-ins for now.
-    spawn_key_light(
-        &mut commands,
-        scale,
-        Vec3::new(6.67, 9.17, 5.00),
-        Color::srgb_u8(0xFF, 0xE5, 0xCC),
-        10_000.0 * 1.6,
-    );
-    spawn_key_light(
-        &mut commands,
-        scale,
-        Vec3::new(-5.83, 2.50, 4.17),
-        Color::srgb_u8(0xDC, 0xE5, 0xEF),
-        10_000.0 * 0.55,
-    );
-    spawn_key_light(
-        &mut commands,
-        scale,
-        Vec3::new(0.83, 3.67, -7.50),
-        Color::srgb_u8(0xFF, 0xD6, 0xA8),
-        10_000.0 * 1.2,
-    );
-    commands.insert_resource(GlobalAmbientLight {
-        color: palette::BOROSILICATE_SRGB,
-        brightness: 350.0,
-        ..default()
-    });
+    // ── lighting rig + horizon dome (DESIGN_BRIEF §2.2 / §3.8) ───────────
+    lighting::spawn_rig(&mut commands, scale);
+    environment::spawn_dome(&mut commands, &mut meshes, &mut materials, scale);
 
-    // ── shared meshes + materials (DESIGN_BRIEF §3.1/§3.2/§3.6) ──────────
+    // ── Gray-Scott seed textures (DESIGN_BRIEF §4.2) ────────────────────
+    // Loaded async; `bake_gs_patterns` converts each to a pigment mask in place
+    // once it arrives. The core materials reference the handles immediately.
+    let gs_handles: [Handle<Image>; 4] =
+        std::array::from_fn(|slot| asset_server.load(GS_SEED_PATHS[slot]));
+
+    // ── shared meshes + materials (DESIGN_BRIEF §3.1/§3.2/§3.3/§3.6) ─────
     let assets = RenderAssets {
         shell_mesh: meshes.add(Sphere::new(SHELL_RADIUS).mesh().ico(4).unwrap()),
         ghost_mesh: meshes.add(Sphere::new(GHOST_RADIUS).mesh().ico(2).unwrap()),
-        core_mesh: meshes.add(Sphere::new(CORE_RADIUS).mesh().ico(3).unwrap()),
-        glass_mat: materials.add(glass_material()),
-        tempdead_mat: materials.add(tempdead_material()),
-        permadead_mat: materials.add(permadead_material()),
-        ghost_mat: materials.add(ghost_material()),
+        // UV sphere for the core so the Gray-Scott pattern maps cleanly.
+        core_mesh: meshes.add(Sphere::new(CORE_RADIUS).mesh().uv(48, 32)),
+        ring_mesh: meshes.add(
+            Sphere::new(CORE_RADIUS * materials::KAOLIN_RING_SCALE)
+                .mesh()
+                .ico(3)
+                .unwrap(),
+        ),
+        glass_mat: materials.add(materials::glass()),
+        tempdead_mat: materials.add(materials::tempdead()),
+        permadead_mat: materials.add(materials::permadead()),
+        ghost_mat: materials.add(materials::ghost()),
+        ring_mat: materials.add(materials::kaolin_ring()),
         core_mats: [
-            materials.add(core_material(Steward::Sienna)),
-            materials.add(core_material(Steward::Lapis)),
-            materials.add(core_material(Steward::Verdigris)),
-            materials.add(core_material(Steward::Kaolin)),
+            materials.add(materials::core(
+                Steward::Sienna,
+                Some(gs_handles[0].clone()),
+            )),
+            materials.add(materials::core(Steward::Lapis, Some(gs_handles[1].clone()))),
+            materials.add(materials::core(
+                Steward::Verdigris,
+                Some(gs_handles[2].clone()),
+            )),
+            materials.add(materials::core(
+                Steward::Kaolin,
+                Some(gs_handles[3].clone()),
+            )),
         ],
     };
 
-    // ── one persistent frame + core entity per cell ─────────────────────
+    // ── one persistent frame + core + ring entity per cell ──────────────
     let count = board.0.board.len();
     let mut frame = Vec::with_capacity(count);
     let mut core = Vec::with_capacity(count);
+    let mut ring = Vec::with_capacity(count);
     for idx in 0..count {
         let pos = cell_world_pos(board.0.board.coord(idx), n);
         // Frame starts as a ghost marker; sync_board paints the real state.
@@ -203,11 +227,45 @@ fn setup(
                 ))
                 .id(),
         );
-        // TODO §3.3: Kaolin's mandatory 2px Ink rim ring.
+        // Kaolin's Ink rim (§3.3). Layer 0 only so the outline never blooms;
+        // shown by sync_board only for live Kaolin cells.
+        ring.push(
+            commands
+                .spawn((
+                    Mesh3d(assets.ring_mesh.clone()),
+                    MeshMaterial3d(assets.ring_mat.clone()),
+                    Transform::from_translation(pos),
+                    Visibility::Hidden,
+                ))
+                .id(),
+        );
     }
 
     commands.insert_resource(assets);
-    commands.insert_resource(CellEntities { frame, core });
+    commands.insert_resource(CellEntities { frame, core, ring });
+    commands.insert_resource(GsPatterns {
+        handles: gs_handles,
+        ready: false,
+    });
+}
+
+/// Bake each Gray-Scott seed image into a pigment mask once it has loaded
+/// (DESIGN_BRIEF §4.2). Runs every frame until all four are ready, then idles.
+fn bake_gs_patterns(mut gs: ResMut<GsPatterns>, mut images: ResMut<Assets<Image>>) {
+    if gs.ready {
+        return;
+    }
+    // Wait until every seed PNG has finished loading before baking any of them,
+    // so the cores never flash the raw red/green field.
+    if gs.handles.iter().any(|h| images.get(h).is_none()) {
+        return;
+    }
+    for handle in &gs.handles {
+        if let Some(mut image) = images.get_mut(handle) {
+            materials::bake_pigment_mask(&mut image);
+        }
+    }
+    gs.ready = true;
 }
 
 /// Rewrite the per-cell entities from the live board, when something changed.
@@ -225,6 +283,9 @@ fn sync_board(
     for idx in 0..gs.board.len() {
         let frame = cells.frame[idx];
         let core = cells.core[idx];
+        let ring = cells.ring[idx];
+        // Kaolin's rim only shows for a live Kaolin core; default it off.
+        let mut ring_visible = false;
         match gs.board.get(idx) {
             // Empty → faint ghost marker, core hidden (DESIGN_BRIEF §3.5).
             CellState::Empty => {
@@ -244,6 +305,7 @@ fn sync_board(
                     MeshMaterial3d(assets.core_mats[steward.slot() as usize].clone()),
                     Visibility::Visible,
                 ));
+                ring_visible = steward == Steward::Kaolin;
             }
             // Temp-dead → darkened shell, core off (§3.6). TODO §3.6: black mist.
             CellState::TempDead(_) => {
@@ -263,82 +325,11 @@ fn sync_board(
                 commands.entity(core).insert(Visibility::Hidden);
             }
         }
+        commands.entity(ring).insert(if ring_visible {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        });
     }
     dirty.0 = false;
-}
-
-/// A directional light aimed at the board center from `pos`, scaled by N/5.
-fn spawn_key_light(commands: &mut Commands, scale: f32, pos: Vec3, color: Color, illuminance: f32) {
-    commands.spawn((
-        DirectionalLight {
-            color,
-            illuminance,
-            shadow_maps_enabled: true,
-            ..default()
-        },
-        Transform::from_translation(pos * scale).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-}
-
-/// Glass shell (DESIGN_BRIEF §3.2).
-fn glass_material() -> StandardMaterial {
-    StandardMaterial {
-        base_color: palette::BOROSILICATE_SRGB,
-        specular_transmission: 1.0,
-        ior: 1.50,
-        thickness: 0.18,
-        perceptual_roughness: 0.04,
-        attenuation_color: palette::BOROSILICATE_LINEAR,
-        attenuation_distance: 2.2,
-        reflectance: 0.5,
-        // TODO §3.2: ExtendedMaterial<StandardMaterial, RimMaterial> Fresnel rim.
-        ..default()
-    }
-}
-
-/// Temp-dead shell: desaturated and dark, transmission killed (DESIGN_BRIEF §3.6).
-fn tempdead_material() -> StandardMaterial {
-    StandardMaterial {
-        base_color: palette::SLATE_SRGB,
-        perceptual_roughness: 0.9,
-        reflectance: 0.2,
-        ..default()
-    }
-}
-
-/// Perma-dead shell: Verdigris-tinted neutral substrate (DESIGN_BRIEF §3.6).
-fn permadead_material() -> StandardMaterial {
-    StandardMaterial {
-        base_color: palette::STEWARD_VERDIGRIS_SRGB,
-        specular_transmission: 0.3,
-        ior: 1.50,
-        thickness: 0.18,
-        perceptual_roughness: 0.25,
-        attenuation_color: palette::STEWARD_VERDIGRIS_LINEAR,
-        attenuation_distance: 1.4,
-        reflectance: 0.35,
-        ..default()
-    }
-}
-
-/// Faint ghost marker for empty cells (DESIGN_BRIEF §3.5 placeholder).
-fn ghost_material() -> StandardMaterial {
-    StandardMaterial {
-        base_color: palette::SLATE_SRGB.with_alpha(0.18),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        ..default()
-    }
-}
-
-/// Emissive steward-core material (DESIGN_BRIEF §3.3).
-fn core_material(steward: Steward) -> StandardMaterial {
-    let slot = steward.slot() as usize;
-    StandardMaterial {
-        base_color: palette::STEWARD_SRGB[slot],
-        emissive: palette::STEWARD_LINEAR[slot].to_linear() * CORE_EMISSIVE,
-        perceptual_roughness: 0.35,
-        // TODO §3.3: sample the per-mesh 96×96 Gray-Scott R-D texture.
-        ..default()
-    }
 }

@@ -69,6 +69,8 @@ render = [
     # bevy_image pulls zstd (KTX2 supercompression); pick the pure-Rust backend
     # so the wasm artifacts build without a C toolchain.
     "bevy/zstd_rust",
+    # PNG decoding for the per-steward Gray-Scott seed textures (§4.2).
+    "bevy/png",
 ]
 
 # The two wasm artifacts (CLAUDE.md build block). `webgpu` is primary; `webgl2`
