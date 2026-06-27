@@ -200,7 +200,7 @@ jobs:
           timeout_minutes: 10
           max_attempts: 2
           retry_wait_seconds: 30
-          command: cargo install wasm-bindgen-cli --version 0.2.95 --locked
+          command: cargo install wasm-bindgen-cli --version 0.2.126 --locked
 
       # ── Build ──────────────────────────────────────────────────────────────
       - name: Build (native — default/native feature)

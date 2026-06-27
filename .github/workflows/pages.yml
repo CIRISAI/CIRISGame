@@ -1,0 +1,146 @@
+name: Deploy to GitHub Pages
+
+# Builds the Bevy app as a wasm32 + webgl2 bundle and deploys it to
+# GitHub Pages at https://cirisai.github.io/CIRISGame/.
+#
+# The deployed artifact is the Bevy app compiled to wasm — there is NO
+# server-side web shell. index.html is a thin ES-module loader that calls
+# wasm-bindgen's init() and lets Bevy render into a full-viewport canvas.
+#
+# webgl2 is the Pages target (widest browser coverage, no WebGPU origin-trial
+# required). webgpu artifacts are built separately in build.yml.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages deployments must not be interrupted mid-flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build wasm bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # binaryen provides wasm-opt for the post-bindgen size pass.
+      - name: Install binaryen (wasm-opt)
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
+          sudo apt-get update
+          sudo apt-get install -y binaryen
+
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          cache-bin: false
+          key: pages-wasm32-webgl2
+
+      # wasm-bindgen-cli version MUST match the `wasm-bindgen` crate in Cargo.lock.
+      # Cargo.lock pin: wasm-bindgen = "0.2.126". A mismatch causes a hard error
+      # ("expected version X, found Y") from wasm-bindgen at the post-process step.
+      - name: Install wasm-bindgen-cli
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+
+      # webgl2: widest browser coverage; mutually exclusive with webgpu so
+      # --no-default-features is required to prevent the native x11/wayland
+      # features from pulling in system libs that don't exist on the runner.
+      - name: Build (wasm32 + webgl2)
+        run: >-
+          cargo build -p ciris-game-engine
+          --no-default-features --features webgl2
+          --release --target wasm32-unknown-unknown
+
+      # Write the loader stub first so dist/ is non-empty even if the wasm
+      # post-process step is skipped (guards a graceful deploy on build errors).
+      - name: Write dist/ scaffold
+        shell: bash
+        run: |
+          mkdir -p dist
+          touch dist/.nojekyll
+          cat > dist/index.html << 'HTMLEOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>CIRISGame</title>
+            <style>
+              html, body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                /* Ink background — matches the Bevy clear color before first frame */
+                background: #111;
+                overflow: hidden;
+              }
+              canvas {
+                display: block;
+                width: 100%;
+                height: 100%;
+              }
+            </style>
+          </head>
+          <body>
+            <canvas id="bevy"></canvas>
+            <script type="module">
+              /* wasm-bindgen ES-module glue — relative path works under /CIRISGame/ */
+              import init from './ciris-game.js';
+              init();
+            </script>
+          </body>
+          </html>
+          HTMLEOF
+
+      # wasm-bindgen produces ciris-game.js (JS glue) + ciris-game_bg.wasm.
+      # wasm-opt shrinks the .wasm in-place with -Oz (size-first pass).
+      # Both steps are guarded: if cargo build failed above the wasm is absent
+      # and the deploy still serves the loader stub (index.html + .nojekyll).
+      - name: wasm-bindgen + wasm-opt
+        shell: bash
+        run: |
+          WASM="target/wasm32-unknown-unknown/release/ciris-game.wasm"
+          if [ -f "$WASM" ]; then
+            wasm-bindgen --target web --out-dir dist/ "$WASM"
+            wasm-opt -Oz -o dist/ciris-game_bg.wasm dist/ciris-game_bg.wasm
+            echo "wasm bundle staged:"
+            ls -lh dist/
+          else
+            echo "::warning::ciris-game.wasm not found; deploy will serve loader stub only"
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
