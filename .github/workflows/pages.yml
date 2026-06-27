@@ -11,8 +11,9 @@ name: Deploy to GitHub Pages
 # required). webgpu artifacts are built separately in build.yml.
 
 on:
-  push:
-    branches: [main]
+  # Dispatch-only: deploy is held until visuals are approved.
+  # Enable push: main here (and the Pages source in repo settings) when ready
+  # to go live. Until then, trigger manually via the Actions UI or gh workflow run.
   workflow_dispatch:
 
 # Pages deployments must not be interrupted mid-flight.
