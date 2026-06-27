@@ -105,6 +105,31 @@ impl GameState {
         }
     }
 
+    /// Create a game with pre-placed perma-dead cells (e.g., from a daily
+    /// puzzle layout). Every index in `perma_dead` must be `< n³`; panics
+    /// otherwise. The game RNG is seeded with `seed`, independent of the
+    /// perma-dead layout.
+    pub fn with_perma_dead(n: u8, seed: [u8; 32], perma_dead: &[usize]) -> Self {
+        let mut gs = GameState::new(n, seed);
+        for &idx in perma_dead {
+            assert!(
+                idx < gs.board.len(),
+                "perma_dead index {idx} out of range for n={n}"
+            );
+            gs.board.set(idx, CellState::PermaDead);
+        }
+        gs
+    }
+
+    /// Create a game state for the given UTC-date daily seed (DESIGN_BRIEF §8.2).
+    /// Derives the daily layout via [`crate::daily_seed::derive_daily_seed`] and
+    /// pre-places all perma-dead cells. The game RNG is seeded independently with
+    /// `seed` so AI / particle randomness is decoupled from the layout derivation.
+    pub fn from_daily_seed(utc_date_iso: &str, board_n: u8, seed: [u8; 32]) -> Self {
+        let daily = crate::daily_seed::derive_daily_seed(utc_date_iso, board_n);
+        GameState::with_perma_dead(board_n, seed, &daily.perma_dead)
+    }
+
     /// The steward whose turn it is.
     pub fn current_steward(&self) -> Steward {
         Steward::from_slot(self.current)

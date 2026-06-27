@@ -29,6 +29,7 @@
 extern crate alloc;
 
 pub mod board;
+pub mod daily_seed;
 pub mod dispersal;
 pub mod engine;
 pub mod hash;
@@ -36,6 +37,7 @@ pub mod lattice;
 pub mod temperature;
 
 pub use board::{Board, CellState, Coord, Steward};
+pub use daily_seed::{derive_daily_seed, DailySeed, Difficulty};
 pub use dispersal::{algorithm_a, dispersal_counts, Dispersal};
 pub use engine::{GameState, Move, MoveError, MoveRecord, Outcome};
 
