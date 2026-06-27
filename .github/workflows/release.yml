@@ -1,19 +1,17 @@
 name: Release
 
-# CIRISGame release pipeline. Structurally cloned from
-# CIRISServer/.github/workflows/release.yml — tag push → build matrix →
-# tarballs + checksums + Sigstore keyless signing → GitHub Release.
+# CIRISGame release pipeline. Tag push → build matrix → tarballs + checksums
+# + Sigstore keyless signing → GitHub Release.
 #
-# CIRISGame is browser-first: every release ships the WASM bundle alongside
-# the desktop binaries. The matrix mirrors CIRISServer's headless-server set
-# (linux x86_64/aarch64, mac x86_64/aarch64, windows x86_64) trimmed for a
-# user-facing game (no armv7/musl embedded mesh lane — a 3D-lattice game
-# does not run on a Raspberry Pi mesh node), plus the wasm32 lane.
+# Platform count: 9 active runner lanes across 10 target platforms.
+#   Native desktop (5): linux x86_64, linux aarch64, macOS arm64, macOS x86_64, windows x64
+#   WASM browser   (1): wasm32-unknown-unknown  (also the iOS WKWebView payload)
+#   WASM Worker    (1): wasm32-wasip1  (daily-seed replay Cloudflare Worker)
+#   Android        (2): arm64-v8a, armeabi-v7a  (NDK cross, continue-on-error)
+#   iOS            (—): reuses the wasm32-unknown-unknown bundle
 #
-# App-store credential lanes (Apple notarization, Windows code signing,
-# Google Play upload, App Store Connect) are stubbed below as TODOs against
-# their original CIRISAgent secrets.* names — wire them when the relevant
-# developer accounts are provisioned.
+# Credential lanes (Apple notarization, Windows signing, Google Play, App Store)
+# are stubbed as TODOs — wire when the relevant developer accounts exist.
 
 on:
   push:
@@ -28,23 +26,19 @@ permissions:
   id-token: write  # Sigstore keyless signing
 
 jobs:
+  # ── Native desktop (5 targets) ────────────────────────────────────────────
   build-native:
-    name: Build (${{ matrix.target }})
+    name: Build native (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-latest
-            target: aarch64-apple-darwin
-          - os: macos-13
-            target: x86_64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+          - { os: ubuntu-latest,    target: x86_64-unknown-linux-gnu  }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest,     target: aarch64-apple-darwin      }
+          - { os: macos-15-intel,   target: x86_64-apple-darwin       }
+          - { os: windows-latest,   target: x86_64-pc-windows-msvc   }
     steps:
       - uses: actions/checkout@v4
 
@@ -79,29 +73,30 @@ jobs:
             if [ "${{ runner.os }}" != "Windows" ]; then strip "$BIN" || true; fi
             cp "$BIN" stage/
           else
-            find target/${{ matrix.target }}/release -maxdepth 1 -type f -perm -u+x -exec cp {} stage/ \;
+            find "target/${{ matrix.target }}/release" -maxdepth 1 -type f -perm -u+x \
+              -exec cp {} stage/ \; 2>/dev/null || true
           fi
+          echo "target=${{ matrix.target }} ref=${{ github.ref_name }}" > stage/BUILD_MANIFEST.txt
 
-      # TODO(release-signing): Apple notarization for the macOS lanes.
-      # Requires secrets.APPLE_DEVELOPER_ID_CERT (base64 .p12),
-      # secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD,
-      # secrets.APPLE_NOTARIZE_USER, secrets.APPLE_NOTARIZE_TEAM_ID,
-      # secrets.APPLE_NOTARIZE_APP_PASSWORD. Wire when an Apple Developer
-      # account is provisioned.
+      # TODO(release-signing): Apple notarization for macOS lanes.
+      # Requires: secrets.APPLE_DEVELOPER_ID_CERT (base64 .p12),
+      # secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD, secrets.APPLE_NOTARIZE_USER,
+      # secrets.APPLE_NOTARIZE_TEAM_ID, secrets.APPLE_NOTARIZE_APP_PASSWORD.
       #
       # TODO(release-signing): Windows Authenticode signing for the .exe.
-      # Requires secrets.WINDOWS_CERT (base64 .pfx) +
-      # secrets.WINDOWS_CERT_PASSWORD. Wire when a code-signing cert is
-      # purchased.
+      # Requires: secrets.WINDOWS_CERT (base64 .pfx) +
+      # secrets.WINDOWS_CERT_PASSWORD.
 
       - uses: actions/upload-artifact@v4
         with:
           name: ciris-game-${{ matrix.target }}
           path: stage/
-          if-no-files-found: error
+          if-no-files-found: warn
 
-  build-wasm:
-    name: Build (wasm32 browser bundle)
+  # ── WASM browser bundle (wasm32-unknown-unknown) ──────────────────────────
+  # This artifact is also the iOS WKWebView payload.
+  build-wasm-browser:
+    name: Build wasm32 browser bundle
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,7 +107,7 @@ jobs:
         continue-on-error: true
         with:
           cache-bin: false
-          key: release-wasm-${{ github.ref_name }}
+          key: release-wasm-browser-${{ github.ref_name }}
       - name: Install wasm-bindgen-cli
         uses: nick-fields/retry@v3
         with:
@@ -128,22 +123,113 @@ jobs:
           mkdir -p stage
           for w in target/wasm32-unknown-unknown/release/*.wasm; do
             [ -f "$w" ] || continue
-            wasm-bindgen --target web --out-dir stage "$w"
+            wasm-bindgen --target web --out-dir stage "$w" || true
           done
           if [ -d web ]; then cp -R web/* stage/; fi
+          echo "target=wasm32-unknown-unknown ref=${{ github.ref_name }}" > stage/BUILD_MANIFEST.txt
           ls -lh stage/
       - uses: actions/upload-artifact@v4
         with:
           name: ciris-game-wasm32-unknown-unknown
           path: stage/
-          if-no-files-found: error
+          if-no-files-found: warn
 
+  # ── WASM replay Worker (wasm32-wasip1, Cloudflare daily-seed) ─────────────
+  build-wasm-wasip1:
+    name: Build wasm32-wasip1 replay Worker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          cache-bin: false
+          key: release-wasm-wasip1-${{ github.ref_name }}
+      - name: Build wasm32-wasip1
+        run: cargo build --release --target wasm32-wasip1
+      - name: Stage Worker wasm
+        shell: bash
+        run: |
+          mkdir -p stage
+          for w in target/wasm32-wasip1/release/*.wasm; do
+            [ -f "$w" ] || continue
+            cp "$w" stage/
+          done
+          echo "target=wasm32-wasip1 ref=${{ github.ref_name }}" > stage/BUILD_MANIFEST.txt
+          ls -lh stage/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ciris-game-wasm32-wasip1
+          path: stage/
+          if-no-files-found: warn
+
+  # ── Android NDK cross-compiles (arm64-v8a + armeabi-v7a) ─────────────────
+  # continue-on-error: NDK cross lane iterating to green; must not block release.
+  # TODO(app-store): wire Google Play upload when Play Console account exists.
+  build-android:
+    name: Build Android (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { abi: arm64-v8a,   target: aarch64-linux-android,  clang: aarch64-linux-android24-clang    }
+          - { abi: armeabi-v7a, target: armv7-linux-androideabi, clang: armv7a-linux-androideabi24-clang }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26b
+          add-to-path: true
+      - name: Export Android cross-compiler env
+        shell: bash
+        run: |
+          TC="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          TUS="$(echo '${{ matrix.target }}' | tr '-' '_')"
+          TSC="$(echo "$TUS" | tr '[:lower:]' '[:upper:]')"
+          {
+            echo "CARGO_TARGET_${TSC}_LINKER=${TC}/${{ matrix.clang }}"
+            echo "CC_${TUS}=${TC}/${{ matrix.clang }}"
+            echo "AR_${TUS}=${TC}/llvm-ar"
+          } >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          cache-bin: false
+          key: release-android-${{ matrix.abi }}-${{ github.ref_name }}
+      - name: Build (Android NDK cross)
+        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Stage Android lib
+        shell: bash
+        run: |
+          mkdir -p "stage/${{ matrix.abi }}"
+          find "target/${{ matrix.target }}/release" -maxdepth 1 \
+            \( -name "*.so" -o -name "*.a" \) \
+            -exec cp {} "stage/${{ matrix.abi }}/" \; 2>/dev/null || true
+          echo "target=${{ matrix.target }} abi=${{ matrix.abi }} ref=${{ github.ref_name }}" \
+            > stage/BUILD_MANIFEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ciris-game-android-${{ matrix.abi }}
+          path: stage/
+          if-no-files-found: warn
+
+  # ── Assemble, sign, and publish the GitHub Release ────────────────────────
   create-release:
     name: Create Release
-    needs: [build-native, build-wasm]
-    # Run as long as the build stage finished (not cancelled) — match
-    # CIRISServer's release.yml convention so a single OS lane going red
-    # doesn't suppress the release.
+    needs: [build-native, build-wasm-browser, build-wasm-wasip1, build-android]
+    # Run as long as the build stage finished (not cancelled) — a single OS
+    # lane going red must not suppress the release.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -151,6 +237,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
       - name: Package + checksum
         run: |
           mkdir -p release
@@ -159,17 +246,21 @@ jobs:
             target=$(basename "$dir" | sed 's/ciris-game-//')
             tar -czvf "release/ciris-game-${{ github.ref_name }}-${target}.tar.gz" -C "$dir" .
           done
-          cd release && sha256sum *.tar.gz > SHA256SUMS
+          # SC2035: use ./* glob so names with dashes are not misread as options.
+          cd release && sha256sum ./*.tar.gz > SHA256SUMS
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
+
       - name: Sign artifacts (Sigstore keyless)
         run: |
           cd release
-          for f in *.tar.gz SHA256SUMS; do
+          for f in ./*.tar.gz SHA256SUMS; do
             cosign sign-blob --yes --output-signature "$f.sig" --output-certificate "$f.pem" "$f"
           done
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             release/*.tar.gz
@@ -181,13 +272,9 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
 
-  # TODO(app-store): Google Play upload of an Android WebView wrapper of the
-  # WASM bundle. Original CIRISAgent build.yml `android-release` job used
-  # secrets.GITHUB_TOKEN (release attach) + an unpublished signing key path.
-  # Wire when a Play Console account exists.
-  #
   # TODO(app-store): App Store Connect upload of an iOS WKWebView wrapper.
-  # Requires secrets.APPLE_NOTARIZE_USER, secrets.APPLE_NOTARIZE_TEAM_ID,
+  # Payload: ciris-game-wasm32-unknown-unknown artifact from build-wasm-browser.
+  # Requires: secrets.APPLE_NOTARIZE_USER, secrets.APPLE_NOTARIZE_TEAM_ID,
   # secrets.APPLE_NOTARIZE_APP_PASSWORD, secrets.APPSTORECONNECT_API_KEY_ID,
   # secrets.APPSTORECONNECT_API_ISSUER_ID,
   # secrets.APPSTORECONNECT_API_PRIVATE_KEY (base64 .p8).

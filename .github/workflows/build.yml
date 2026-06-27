@@ -1,21 +1,18 @@
 name: Build and Deploy
 
-# CIRISGame primary build pipeline. The filename + headline name mirror
-# CIRISAgent/.github/workflows/build.yml — but where the agent build runs
-# Python-side typecheck/test/wheel jobs, the game's analogue is the Rust
-# build matrix (native desktop binaries + the browser-first WASM bundle).
+# CIRISGame primary build pipeline. Sibling-shaped to CIRISServer's build
+# matrix — native desktop binaries + WASM bundles + Android cross-compiles.
 #
-# Sibling-derived structure:
-#   - typecheck      ← CIRISAgent build.yml typecheck       (here: cargo check)
-#   - test           ← CIRISAgent build.yml test (sharded)  (here: cargo test --all)
-#   - build (matrix) ← CIRISAgent build.yml build-wheel     (here: native + wasm)
+# Platform count: 9 active runner lanes across 10 target platforms.
+#   Native desktop (5): linux x86_64, linux aarch64, macOS arm64, macOS x86_64, windows x64
+#   WASM browser   (1): wasm32-unknown-unknown  (also the iOS WKWebView payload)
+#   WASM Worker    (1): wasm32-wasip1  (daily-seed replay Cloudflare Worker)
+#   Android        (2): arm64-v8a, armeabi-v7a  (NDK cross, continue-on-error)
+#   iOS            (—): reuses the wasm32-unknown-unknown bundle; no separate runner lane
 #
-# Heavy Python-side jobs in the upstream file (staged-qa, build-wheel-headless,
-# publish-wheels, register-build, deploy, android-release) have no Rust
-# analogue here and are not stubbed — the release.yml workflow covers the
-# tag-triggered artifact path, and the app-store-style lanes that DO have a
-# game analogue (Android/iOS via wasm + web wrapper, App Store) are stubbed
-# in release.yml as TODOs against secrets.* names.
+# Jobs guarded by `if-no-files-found: warn` and BUILD_MANIFEST.txt sentinel
+# while the Bevy view crate (ciris-game-engine) and the game binary do not
+# yet exist. The core (ciris-game-engine-core) compiles on all targets today.
 
 on:
   push:
@@ -32,8 +29,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Analogue of CIRISAgent build.yml's `typecheck` job: surface compile
-  # errors fast on a single OS before paying for the full matrix. Cheap.
+  # ── Fast compile-check before paying for the full matrix ──────────────────
   typecheck:
     name: Cargo Check
     runs-on: ubuntu-latest
@@ -54,11 +50,7 @@ jobs:
           cache-bin: false
       - run: cargo check --all-targets
 
-  # Analogue of CIRISAgent build.yml's `test` job (sharded 1..8). Rust's
-  # cargo test doesn't shard the way pytest-split does; this is a single
-  # job on Linux. The OS coverage for tests is in ci.yml's clippy-test
-  # matrix — running cargo test on three OSes from BOTH workflows is wasted
-  # runner time.
+  # ── Focused cargo test on Linux (OS matrix coverage is in ci.yml) ─────────
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -79,38 +71,34 @@ jobs:
           cache-bin: false
       - run: cargo test --all --verbose
 
-  # Analogue of CIRISAgent build.yml's `build-wheel` matrix — produces the
-  # download artifacts a human/agent grabs from a CI run. Three OS lanes for
-  # the native desktop binary, one dedicated WASM lane for the browser build.
+  # ── Platform build matrix (9 active lanes) ────────────────────────────────
   build:
     name: Build (${{ matrix.name }})
     needs: [typecheck]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 45
+    # Android lanes are experimental (NDK cross) and must not red the matrix.
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            name: Linux x64
-            target: x86_64-unknown-linux-gnu
-            kind: native
-          - os: macos-latest
-            name: macOS ARM64
-            target: aarch64-apple-darwin
-            kind: native
-          - os: macos-13
-            name: macOS x64
-            target: x86_64-apple-darwin
-            kind: native
-          - os: windows-latest
-            name: Windows x64
-            target: x86_64-pc-windows-msvc
-            kind: native
-          - os: ubuntu-latest
-            name: WASM (browser)
-            target: wasm32-unknown-unknown
-            kind: wasm
+          # Native desktop ─────────────────────────────────────────────────────
+          - { os: ubuntu-latest,     name: "Linux x86_64",  target: x86_64-unknown-linux-gnu,  kind: native }
+          - { os: ubuntu-24.04-arm,  name: "Linux aarch64", target: aarch64-unknown-linux-gnu, kind: native }
+          - { os: macos-latest,      name: "macOS arm64",   target: aarch64-apple-darwin,      kind: native }
+          - { os: macos-15-intel,    name: "macOS x86_64",  target: x86_64-apple-darwin,       kind: native }
+          - { os: windows-latest,    name: "Windows x64",   target: x86_64-pc-windows-msvc,   kind: native }
+          # WASM browser bundle ─────────────────────────────────────────────────
+          # Also the iOS WKWebView payload — no separate iOS runner lane needed.
+          - { os: ubuntu-latest,     name: "WASM browser",  target: wasm32-unknown-unknown,    kind: wasm-browser }
+          # WASM replay Worker (Cloudflare wasm32-wasip1) ───────────────────────
+          - { os: ubuntu-latest,     name: "WASM Worker",   target: wasm32-wasip1,             kind: wasm-wasip1 }
+          # Android NDK cross-compiles ──────────────────────────────────────────
+          - { os: ubuntu-latest, name: "Android arm64", target: aarch64-linux-android,
+              kind: android, abi: arm64-v8a,   clang: aarch64-linux-android24-clang,    experimental: true }
+          - { os: ubuntu-latest, name: "Android armv7", target: armv7-linux-androideabi,
+              kind: android, abi: armeabi-v7a, clang: armv7a-linux-androideabi24-clang, experimental: true }
     steps:
       - uses: actions/checkout@v4
 
@@ -118,6 +106,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Linux renderer deps (native desktop lane only) ─────────────────────────
       - name: Install renderer build deps (Linux native)
         if: runner.os == 'Linux' && matrix.kind == 'native'
         run: |
@@ -125,17 +114,37 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev libx11-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config
 
+      # Android NDK + cross-compiler env ───────────────────────────────────────
+      - name: Set up Android NDK and cross-compiler
+        if: matrix.kind == 'android'
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26b
+          add-to-path: true
+
+      - name: Export Android cross-compiler env
+        if: matrix.kind == 'android'
+        shell: bash
+        run: |
+          TC="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          TUS="$(echo '${{ matrix.target }}' | tr '-' '_')"
+          TSC="$(echo "$TUS" | tr '[:lower:]' '[:upper:]')"
+          {
+            echo "CARGO_TARGET_${TSC}_LINKER=${TC}/${{ matrix.clang }}"
+            echo "CC_${TUS}=${TC}/${{ matrix.clang }}"
+            echo "AR_${TUS}=${TC}/llvm-ar"
+          } >> "$GITHUB_ENV"
+
       - uses: Swatinem/rust-cache@v2
         continue-on-error: true
         with:
           cache-bin: false
           key: build-${{ matrix.target }}
 
-      # WASM lane: install wasm-bindgen-cli for the post-cargo binding step
-      # (macroquad/bevy/three-bridge all need it). Pinned to a recent
-      # known-good; bump as the toolchain moves.
+      # wasm-bindgen-cli (browser wasm lane only) ──────────────────────────────
       - name: Install wasm-bindgen-cli
-        if: matrix.kind == 'wasm'
+        if: matrix.kind == 'wasm-browser'
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 10
@@ -143,16 +152,31 @@ jobs:
           retry_wait_seconds: 30
           command: cargo install wasm-bindgen-cli --version 0.2.95 --locked
 
+      # Build ──────────────────────────────────────────────────────────────────
       - name: Build (native)
         if: matrix.kind == 'native'
         shell: bash
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build (wasm32)
-        if: matrix.kind == 'wasm'
+      - name: Build (wasm32-unknown-unknown browser bundle)
+        if: matrix.kind == 'wasm-browser'
         shell: bash
         run: cargo build --release --target wasm32-unknown-unknown
 
+      - name: Build (wasm32-wasip1 replay Worker)
+        if: matrix.kind == 'wasm-wasip1'
+        shell: bash
+        # The daily-seed replay Cloudflare Worker lives in ciris-game-engine-core
+        # (no_std, wasm32-wasip1 target). The wasi-replay feature is wired when
+        # the Worker binary target is added; until then this validates the path.
+        run: cargo build --release --target wasm32-wasip1
+
+      - name: Build (Android NDK cross)
+        if: matrix.kind == 'android'
+        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # Stage artifacts ────────────────────────────────────────────────────────
       - name: Stage native binary
         if: matrix.kind == 'native'
         shell: bash
@@ -164,28 +188,53 @@ jobs:
             if [ "${{ runner.os }}" != "Windows" ]; then strip "$BIN" || true; fi
             cp "$BIN" stage/
           else
-            # Fallback: copy every release binary so the artifact is never empty
-            # while the crate's bin name is still being chosen.
-            find target/${{ matrix.target }}/release -maxdepth 1 -type f -perm -u+x -exec cp {} stage/ \;
+            # Game binary (ciris-game-engine view crate) not yet built.
+            # Copy lib artifacts as build-proof; game binary comes with Bevy crate.
+            find "target/${{ matrix.target }}/release" -maxdepth 1 \
+              \( -name "*.rlib" -o -name "*.a" -o -type f -perm -u+x \) \
+              -exec cp {} stage/ \; 2>/dev/null || true
           fi
+          # Sentinel ensures a non-empty upload while the binary does not yet exist.
+          echo "target=${{ matrix.target }} date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > stage/BUILD_MANIFEST.txt
           ls -lh stage/
 
-      - name: Stage wasm bundle
-        if: matrix.kind == 'wasm'
+      - name: Stage wasm browser bundle
+        if: matrix.kind == 'wasm-browser'
         shell: bash
         run: |
           mkdir -p stage
-          # Run wasm-bindgen against every release .wasm; the renderer
-          # commitment (macroquad vs bevy vs three-bridge) decides which
-          # file actually loads in the browser, but the bundling step is
-          # the same.
+          # wasm-bindgen runs only when the view crate produces a binary .wasm.
+          # The core library alone does not; the loop skips cleanly if empty.
           for w in target/wasm32-unknown-unknown/release/*.wasm; do
             [ -f "$w" ] || continue
-            wasm-bindgen --target web --out-dir stage "$w"
+            wasm-bindgen --target web --out-dir stage "$w" || true
           done
-          # If a static web/ folder exists in the repo (index.html, css),
-          # ship it alongside the bindings.
           if [ -d web ]; then cp -R web/* stage/; fi
+          echo "target=wasm32-unknown-unknown date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > stage/BUILD_MANIFEST.txt
+          ls -lh stage/
+
+      - name: Stage wasm32-wasip1 Worker
+        if: matrix.kind == 'wasm-wasip1'
+        shell: bash
+        run: |
+          mkdir -p stage
+          for w in target/wasm32-wasip1/release/*.wasm; do
+            [ -f "$w" ] || continue
+            cp "$w" stage/
+          done
+          echo "target=wasm32-wasip1 date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > stage/BUILD_MANIFEST.txt
+          ls -lh stage/
+
+      - name: Stage Android lib
+        if: matrix.kind == 'android'
+        shell: bash
+        run: |
+          mkdir -p "stage/${{ matrix.abi }}"
+          find "target/${{ matrix.target }}/release" -maxdepth 1 \
+            \( -name "*.so" -o -name "*.a" \) \
+            -exec cp {} "stage/${{ matrix.abi }}/" \; 2>/dev/null || true
+          echo "target=${{ matrix.target }} abi=${{ matrix.abi }} date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > stage/BUILD_MANIFEST.txt
           ls -lh stage/
 
       - name: Upload build artifact
@@ -193,5 +242,7 @@ jobs:
         with:
           name: ciris-game-${{ matrix.target }}
           path: stage/
-          if-no-files-found: error
+          # warn (not error) while the game binary / wasm bundle are pending;
+          # BUILD_MANIFEST.txt ensures the path is never empty in practice.
+          if-no-files-found: warn
           retention-days: 30

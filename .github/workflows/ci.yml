@@ -56,5 +56,10 @@ jobs:
         continue-on-error: true
         with:
           cache-bin: false
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --all
+      # Doctests are cheap for the no_std core; run on Linux only (one
+      # canonical record) so we don't triple the cost for no extra signal.
+      - name: Doctest
+        if: runner.os == 'Linux'
+        run: cargo test --doc
