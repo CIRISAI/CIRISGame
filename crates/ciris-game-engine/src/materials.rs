@@ -27,9 +27,10 @@ pub fn glass() -> StandardMaterial {
         // almost nothing, and a thick wall + clean roughness so the refraction of
         // the opaque core reads as a marble (you see the glass edge bend it).
         specular_transmission: 0.97,
-        ior: 1.52,
-        thickness: 0.6,
-        perceptual_roughness: 0.03,
+        // Higher IOR → the rim bends the core harder, so the refraction reads.
+        ior: 1.7,
+        thickness: 0.84,
+        perceptual_roughness: 0.02,
         metallic: 0.0,
         reflectance: 0.5,
         attenuation_color: palette::BOROSILICATE_LINEAR,

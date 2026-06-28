@@ -34,10 +34,10 @@ use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD
 /// Glass shell radius (DESIGN_BRIEF §3.1). `pub(crate)` so the effects layer can
 /// size orbit radii and pipe spans against it.
 pub(crate) const SHELL_RADIUS: f32 = 0.42;
-/// Opaque steward-core radius (DESIGN_BRIEF §3.1/§3.3): the neon marble core
-/// inside the `SHELL_RADIUS` glass. At 0.36 vs 0.42 the clear glass is ~1/3 of
-/// the sphere's volume, so the refracting rim reads.
-const CORE_RADIUS: f32 = 0.36;
+/// Opaque steward-core radius (DESIGN_BRIEF §3.1/§3.3): a small bright neon core
+/// suspended in a big clear-glass marble (0.25 vs the 0.42 shell), so the thick
+/// glass lenses/refracts the core and the clear refractive rim clearly reads.
+const CORE_RADIUS: f32 = 0.25;
 /// Bloom-layer index for emissive cores (DESIGN_BRIEF §2.3 / §3.3). Shared with
 /// the effects layer so motes glow on the same layer.
 pub(crate) const BLOOM_LAYER: usize = 1;
@@ -264,7 +264,7 @@ fn setup(
         Msaa::Off,
         Tonemapping::AgX,
         Bloom {
-            intensity: 0.42,
+            intensity: 0.28,
             composite_mode: BloomCompositeMode::EnergyConserving,
             ..default()
         },

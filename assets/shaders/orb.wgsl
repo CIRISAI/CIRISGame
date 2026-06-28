@@ -69,34 +69,36 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let neon_f = gas(p, t, 0.0);
     let clear_f = gas(p * 1.4, t * 0.6, 11.7);
 
-    // Neon gas: the steward colour glows across the whole interior (so it reads as
-    // NEON, not a faint tint), hottest along the swirl wisps. Deep in HDR → bloom.
     let wisp = smoothstep(0.35, 0.8, neon_f);
-    let neon = color.rgb * (neon_glow * (0.4 + 1.1 * wisp));
-
-    // Clear gas: a faint cool-white haze, a second swirling medium.
     let haze = smoothstep(0.4, 0.95, clear_f);
-    let clear = vec3<f32>(0.85, 0.92, 1.0) * (haze * 0.4);
 
-    // Thick clear glass: a wide, bright Fresnel rim catching light at the
-    // silhouette (low exponent = wider band = thicker-looking glass), tinted
-    // toward white so it reads as a glass edge.
     let nrm = normalize(in.world_normal);
     let view_dir = normalize(view.world_position.xyz - in.world_position.xyz);
     let fres = pow(1.0 - clamp(dot(nrm, view_dir), 0.0, 1.0), 1.8);
-    let rim = mix(color.rgb, vec3<f32>(1.0), 0.4) * (rim_gain * fres);
-
-    // Selection: when the cursor is on this sphere, it swirls with extra light —
-    // the wisps brighten and the whole orb lifts toward white (reads as "picked").
+    // Selection: the sphere under the cursor swirls with extra light.
     let sel = hover.w * exp(-distance(in.world_position.xyz, hover.xyz) * 1.6);
-    let sel_light = mix(color.rgb, vec3<f32>(1.0), 0.4)
-        * (sel * (1.5 + 3.0 * wisp));
 
-    let col = neon + clear + rim + sel_light;
-    // See-through centre (clear glass); denser at the neon wisps + glass rim, and
-    // firmer when selected.
+    if (color.a >= 0.999) {
+        // OPAQUE LIVE CORE → push SATURATION (not brightness) so the muted
+        // steward pigment reads as neon without blooming to white, which would
+        // also erase the glass edge. Saturate by pushing away from luminance.
+        let lum = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+        let sat = max(vec3<f32>(0.0), vec3<f32>(lum) + (color.rgb - vec3<f32>(lum)) * 2.0);
+        let core = sat * (neon_glow * (0.85 + 0.8 * wisp));
+        let sel_add = sat * (sel * (2.0 + 2.0 * wisp));
+        return vec4<f32>(core + sel_add, 1.0);
+    }
+
+    // TRANSLUCENT EMPTY-POSITION MARKER → tiny clear grey glass: a faint body, a
+    // cool-white haze (second medium), a bright Fresnel glass rim, and the
+    // hover-selection swirl.
+    let body = color.rgb * (neon_glow * (0.4 + 1.1 * wisp));
+    let clear = vec3<f32>(0.85, 0.92, 1.0) * (haze * 0.4);
+    let rim = mix(color.rgb, vec3<f32>(1.0), 0.4) * (rim_gain * fres);
+    let sel_light = mix(color.rgb, vec3<f32>(1.0), 0.4) * (sel * (1.5 + 3.0 * wisp));
+    let col = body + clear + rim + sel_light;
     let alpha = clamp(
-        color.a * 0.3 + wisp * 0.5 + haze * 0.15 + fres * 0.7 + sel * 0.4,
+        color.a * 0.3 + wisp * 0.4 + haze * 0.15 + fres * 0.7 + sel * 0.4,
         0.0,
         1.0,
     );

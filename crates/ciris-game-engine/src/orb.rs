@@ -32,8 +32,10 @@ const BASE_ALPHA: f32 = 1.0;
 const SWIRL_SPEED: f32 = 0.15;
 /// Swirl scale (lobes per unit; lower = larger, gassier lobes).
 const SWIRL_SCALE: f32 = 2.8;
-/// Neon glow gain — deep HDR so Bloom turns the coloured gas hot.
-const NEON_GLOW: f32 = 9.0;
+/// Core brightness. Modest on purpose: the steward pigments are muted earth
+/// tones, so pushing glow high just blooms them to white (pastel) and erases the
+/// glass edge. We stay just into HDR and get "neon" from saturation instead.
+const NEON_GLOW: f32 = 2.2;
 /// Fresnel "glass" rim gain — bright wide edge catch so it reads as thick glass.
 const RIM_GAIN: f32 = 3.0;
 
