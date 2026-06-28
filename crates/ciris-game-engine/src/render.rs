@@ -22,10 +22,11 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
+use crate::plasma::PlasmaMaterial;
 use crate::state::AppScreen;
 use crate::{
     effects, endgame, environment, geometry, i18n, intro, lighting, materials, mist, palette, pipe,
-    screensaver, state, ui_theme, wizard,
+    plasma, screensaver, state, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -58,6 +59,7 @@ struct RenderAssets {
     tempdead_mat: Handle<StandardMaterial>,
     permadead_mat: Handle<StandardMaterial>,
     ghost_mat: Handle<StandardMaterial>,
+    plasma_mat: Handle<PlasmaMaterial>,
     ring_mat: Handle<StandardMaterial>,
     /// Emissive core material per steward slot (0..=3).
     core_mats: [Handle<StandardMaterial>; 4],
@@ -121,6 +123,7 @@ pub fn run_app() {
     .add_plugins(mist::plugin)
     // Liquid-pigment pipes: the custom `PipeMaterial` + the camera-driven slosh.
     .add_plugins(pipe::plugin)
+    .add_plugins(plasma::plugin)
     // Front-of-house: the Intro → Setup → Playing state machine (`state.rs`),
     // the click-through intro (`intro.rs`), and the setup wizard (`wizard.rs`).
     // The screensaver below keeps advancing in every state.
@@ -232,6 +235,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mist_materials: ResMut<Assets<mist::MistMaterial>>,
+    mut plasma_materials: ResMut<Assets<PlasmaMaterial>>,
     asset_server: Res<AssetServer>,
     board: Res<BoardResource>,
 ) {
@@ -314,6 +318,7 @@ fn setup(
         tempdead_mat: materials.add(materials::tempdead()),
         permadead_mat: materials.add(materials::permadead()),
         ghost_mat: materials.add(materials::ghost()),
+        plasma_mat: plasma_materials.add(PlasmaMaterial::default()),
         ring_mat: materials.add(materials::kaolin_ring()),
         core_mats: [
             materials.add(materials::core(
@@ -462,42 +467,56 @@ fn sync_board(
         prev.0[idx] = next;
         // Kaolin's rim only shows for a live Kaolin core; default it off.
         let mut ring_visible = false;
+        // The frame swaps material *type* between the empty cage (PlasmaMaterial)
+        // and the live/dead shells (StandardMaterial), so each branch inserts one
+        // and removes the other.
         match gs.board.get(idx) {
-            // Empty → ghost wireframe, core hidden (DESIGN_BRIEF §3.5).
+            // Empty → flowing-plasma wireframe, core hidden (DESIGN_BRIEF §3.5).
             CellState::Empty => {
-                commands.entity(frame).insert((
-                    Mesh3d(assets.ghost_mesh.clone()),
-                    MeshMaterial3d(assets.ghost_mat.clone()),
-                ));
+                commands
+                    .entity(frame)
+                    .insert((
+                        Mesh3d(assets.ghost_mesh.clone()),
+                        MeshMaterial3d(assets.plasma_mat.clone()),
+                    ))
+                    .remove::<MeshMaterial3d<StandardMaterial>>();
                 commands.entity(core).insert(Visibility::Hidden);
             }
             // Live → glass shell + emissive steward core (§3.2/§3.3).
             CellState::Live(steward) => {
-                commands.entity(frame).insert((
-                    Mesh3d(assets.shell_mesh.clone()),
-                    MeshMaterial3d(assets.glass_mat.clone()),
-                ));
+                commands
+                    .entity(frame)
+                    .insert((
+                        Mesh3d(assets.shell_mesh.clone()),
+                        MeshMaterial3d(assets.glass_mat.clone()),
+                    ))
+                    .remove::<MeshMaterial3d<PlasmaMaterial>>();
                 commands.entity(core).insert((
                     MeshMaterial3d(assets.core_mats[steward.slot() as usize].clone()),
                     Visibility::Visible,
                 ));
                 ring_visible = steward == Steward::Kaolin;
             }
-            // Temp-dead → darkened shell, core off (§3.6). TODO §3.6: black mist.
+            // Temp-dead → darkened shell, core off (§3.6).
             CellState::TempDead(_) => {
-                commands.entity(frame).insert((
-                    Mesh3d(assets.shell_mesh.clone()),
-                    MeshMaterial3d(assets.tempdead_mat.clone()),
-                ));
+                commands
+                    .entity(frame)
+                    .insert((
+                        Mesh3d(assets.shell_mesh.clone()),
+                        MeshMaterial3d(assets.tempdead_mat.clone()),
+                    ))
+                    .remove::<MeshMaterial3d<PlasmaMaterial>>();
                 commands.entity(core).insert(Visibility::Hidden);
             }
-            // Perma-dead → Verdigris-tinted shell, core off (§3.6). TODO §3.6:
-            // green mist.
+            // Perma-dead → Verdigris-tinted shell, core off (§3.6).
             CellState::PermaDead => {
-                commands.entity(frame).insert((
-                    Mesh3d(assets.shell_mesh.clone()),
-                    MeshMaterial3d(assets.permadead_mat.clone()),
-                ));
+                commands
+                    .entity(frame)
+                    .insert((
+                        Mesh3d(assets.shell_mesh.clone()),
+                        MeshMaterial3d(assets.permadead_mat.clone()),
+                    ))
+                    .remove::<MeshMaterial3d<PlasmaMaterial>>();
                 commands.entity(core).insert(Visibility::Hidden);
             }
         }

@@ -58,6 +58,9 @@ mod mist;
 mod pipe;
 
 #[cfg(feature = "render")]
+mod plasma;
+
+#[cfg(feature = "render")]
 mod render;
 
 #[cfg(feature = "render")]

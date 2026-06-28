@@ -29,14 +29,17 @@ pub const KAOLIN_RING_SCALE: f32 = 1.12;
 pub fn glass() -> StandardMaterial {
     StandardMaterial {
         base_color: palette::BOROSILICATE_SRGB,
-        specular_transmission: 0.9,
+        // Max visibility (the "prayer ball" — see the state through the shell):
+        // near-total transmission, thin walls, long attenuation so it reads as a
+        // clean lens, not a cloudy marble.
+        specular_transmission: 0.97,
         ior: 1.50,
-        thickness: 0.18,
-        perceptual_roughness: 0.06,
+        thickness: 0.06,
+        perceptual_roughness: 0.05,
         metallic: 0.0,
-        reflectance: 0.45,
+        reflectance: 0.3,
         attenuation_color: palette::BOROSILICATE_LINEAR,
-        attenuation_distance: 2.2,
+        attenuation_distance: 8.0,
         ..default()
     }
 }
