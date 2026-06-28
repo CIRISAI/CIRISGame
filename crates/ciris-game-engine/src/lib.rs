@@ -55,6 +55,9 @@ mod materials;
 mod mist;
 
 #[cfg(feature = "render")]
+mod navigation;
+
+#[cfg(feature = "render")]
 mod pipe;
 
 #[cfg(feature = "render")]

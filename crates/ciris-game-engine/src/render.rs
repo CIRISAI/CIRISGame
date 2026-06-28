@@ -25,8 +25,8 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use crate::plasma::PlasmaMaterial;
 use crate::state::AppScreen;
 use crate::{
-    effects, endgame, environment, geometry, i18n, intro, lighting, materials, mist, palette, pipe,
-    plasma, screensaver, state, ui_theme, wizard,
+    effects, endgame, environment, geometry, i18n, intro, lighting, materials, mist, navigation,
+    palette, pipe, plasma, screensaver, state, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -120,6 +120,8 @@ pub fn run_app() {
         ..default()
     }))
     .add_plugins(PanOrbitCameraPlugin)
+    // Layer-traversal fly-through layered on top of the panorbit rig (§4.8).
+    .add_plugins(navigation::plugin)
     .add_plugins(mist::plugin)
     // Liquid-pigment pipes: the custom `PipeMaterial` + the camera-driven slosh.
     .add_plugins(pipe::plugin)
