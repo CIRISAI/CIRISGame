@@ -40,12 +40,25 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      # binaryen provides wasm-opt for the post-bindgen size pass.
+      # binaryen provides wasm-opt for the post-bindgen size pass. We pin the
+      # official release tarball, NOT `apt-get install binaryen`: Ubuntu's
+      # packaged binaryen is an old build that, under -Oz, mis-binds the
+      # `__wbindgen_externrefs` export to the funcref table (table[0], whose
+      # max==initial and so cannot grow). wasm-bindgen's init then calls
+      # `table.grow(4)` on it and the page dies with
+      #   RangeError: WebAssembly.Table.grow(): failed to grow table by 4
+      # version_130 binds the export to the growable externref table correctly
+      # (verified by inspecting the emitted Table/Export sections).
       - name: Install binaryen (wasm-opt)
         run: |
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
-          sudo apt-get update
-          sudo apt-get install -y binaryen
+          BINARYEN=version_130
+          curl -fsSL -o /tmp/binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN}/binaryen-${BINARYEN}-x86_64-linux.tar.gz"
+          tar -xzf /tmp/binaryen.tar.gz -C /tmp
+          echo "/tmp/binaryen-${BINARYEN}/bin" >> "$GITHUB_PATH"
+
+      - name: Verify wasm-opt version
+        run: wasm-opt --version
 
       - uses: Swatinem/rust-cache@v2
         continue-on-error: true
