@@ -70,6 +70,17 @@ impl Default for CellAnimEntry {
 #[derive(Resource)]
 pub(crate) struct CellAnim(Vec<CellAnimEntry>);
 
+/// Live-tunable global multiplier on the steward core size (driven by the tuning
+/// panel; 1.0 = the modelled radius).
+#[derive(Resource)]
+pub(crate) struct CoreScale(pub f32);
+
+impl Default for CoreScale {
+    fn default() -> Self {
+        CoreScale(1.0)
+    }
+}
+
 /// Shared, immutable effect handles built once at startup. Pipe gas materials are
 /// *not* shared — each pipe gets its own [`pipe::PipeMaterial`] in [`sync_effects`].
 #[derive(Resource)]
@@ -265,6 +276,7 @@ pub(crate) fn sync_effects(
 pub(crate) fn breathe_cores(
     time: Res<Time>,
     anim: Res<CellAnim>,
+    core_scale: Res<CoreScale>,
     mut cores: Query<(&CoreCell, &mut Transform)>,
 ) {
     let t = time.elapsed_secs();
@@ -278,7 +290,7 @@ pub(crate) fn breathe_cores(
         // Fade-in: scale the core up from a point over CORE_BIRTH_SECS when it
         // first comes live (§4.6 dispersal "cores reappear").
         let birth = smoothstep01((t - e.birth) / CORE_BIRTH_SECS);
-        tf.scale = Vec3::splat(s * birth);
+        tf.scale = Vec3::splat(s * birth * core_scale.0);
     }
 }
 

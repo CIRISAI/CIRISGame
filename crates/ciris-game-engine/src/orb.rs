@@ -58,7 +58,13 @@ pub struct OrbMaterial {
     /// sphere nearest the focus swirls brighter with light. `w = 0` is resting.
     #[uniform(2)]
     pub hover: Vec4,
+    /// Live tuning: `x` = gas saturation, `y` spare, `z` spare, `w` spare.
+    #[uniform(3)]
+    pub params2: Vec4,
 }
+
+/// Default gas saturation (how far the muted pigment is pushed from grey).
+pub(crate) const DEFAULT_SAT: f32 = 2.0;
 
 impl Material for OrbMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -83,6 +89,7 @@ pub(crate) fn material(steward: Steward) -> OrbMaterial {
         color: LinearRgba::new(rgba.red, rgba.green, rgba.blue, BASE_ALPHA),
         params: Vec4::new(SWIRL_SPEED, SWIRL_SCALE, NEON_GLOW, RIM_GAIN),
         hover: Vec4::ZERO,
+        params2: Vec4::new(DEFAULT_SAT, 0.0, 0.0, 0.0),
     }
 }
 
@@ -92,6 +99,7 @@ pub(crate) fn empty_material() -> OrbMaterial {
         color: EMPTY_TINT,
         params: Vec4::new(SWIRL_SPEED, SWIRL_SCALE, EMPTY_GLOW, EMPTY_RIM),
         hover: Vec4::ZERO,
+        params2: Vec4::new(1.0, 0.0, 0.0, 0.0),
     }
 }
 

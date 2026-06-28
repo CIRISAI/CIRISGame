@@ -25,8 +25,8 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
-    attract, effects, endgame, environment, fonts, hover, i18n, intro, lighting, materials, mist,
-    navigation, orb, palette, pipe, plasma, screensaver, state, ui_theme, wizard,
+    attract, cube, effects, endgame, environment, fonts, hover, i18n, intro, lighting, materials,
+    mist, navigation, orb, palette, pipe, plasma, screensaver, state, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -118,6 +118,8 @@ pub fn run_app() {
     .add_plugins(pipe::plugin)
     .add_plugins(plasma::plugin)
     .add_plugins(orb::plugin)
+    // DBS tournament grid-cube enclosure + dark/light mode selector.
+    .add_plugins(cube::plugin)
     // Cursor-attention: hovered cell glows + plasma rushes inward (hover.rs).
     .add_plugins(hover::plugin)
     // Load the §5.1 UI faces so the front-of-house text actually renders.
@@ -140,6 +142,7 @@ pub fn run_app() {
     .insert_resource(BoardDirty(true))
     .insert_resource(screensaver::ScreensaverState::new())
     .insert_resource(screensaver::AiRng::new(0))
+    .init_resource::<effects::CoreScale>()
     .init_resource::<endgame::Ending>()
     .add_systems(Startup, setup)
     .add_systems(

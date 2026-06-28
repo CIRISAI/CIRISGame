@@ -26,6 +26,9 @@ pub mod palette;
 mod attract;
 
 #[cfg(feature = "render")]
+mod cube;
+
+#[cfg(feature = "render")]
 mod effects;
 
 // Dev screenshot capture is native-only: `save_to_disk` writes a file on native

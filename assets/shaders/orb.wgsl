@@ -17,6 +17,8 @@
 @group(3) @binding(1) var<uniform> params: vec4<f32>;
 // xyz = cursor focus point (world); w = selection strength [0,1].
 @group(3) @binding(2) var<uniform> hover: vec4<f32>;
+// x = gas saturation (live-tuned); yzw spare.
+@group(3) @binding(3) var<uniform> params2: vec4<f32>;
 
 fn hash13(p3: vec3<f32>) -> f32 {
     var p = fract(p3 * 0.1031);
@@ -83,7 +85,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         // steward pigment reads as neon without blooming to white, which would
         // also erase the glass edge. Saturate by pushing away from luminance.
         let lum = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-        let sat = max(vec3<f32>(0.0), vec3<f32>(lum) + (color.rgb - vec3<f32>(lum)) * 2.0);
+        let sat = max(vec3<f32>(0.0), vec3<f32>(lum) + (color.rgb - vec3<f32>(lum)) * params2.x);
         let core = sat * (neon_glow * (0.85 + 0.8 * wisp));
         let sel_add = sat * (sel * (2.0 + 2.0 * wisp));
         return vec4<f32>(core + sel_add, 1.0);
