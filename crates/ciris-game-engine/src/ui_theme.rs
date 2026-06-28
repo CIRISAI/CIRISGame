@@ -184,13 +184,12 @@ pub fn button_visuals(
 pub const HERO_INTRO: [f32; 4] = [0.22, 0.10, 0.56, 0.34];
 pub const HERO_SETUP: [f32; 4] = [0.30, 0.07, 0.40, 0.22];
 
-/// The hero viewport rectangle for `screen`, or `None` for full-window (Playing).
-pub fn hero_rect(screen: AppScreen) -> Option<[f32; 4]> {
-    match screen {
-        AppScreen::Intro => Some(HERO_INTRO),
-        AppScreen::Setup => Some(HERO_SETUP),
-        AppScreen::Playing => None,
-    }
+/// The hero viewport rectangle for `screen`. Always `None` — the live screensaver
+/// fills the whole window in every state and the front-of-house UI floats on top
+/// of it (no inset). Kept as a function so `render::update_camera_viewport`'s call
+/// site is unchanged.
+pub fn hero_rect(_screen: AppScreen) -> Option<[f32; 4]> {
+    None
 }
 
 /// Build the standard front-of-house overlay: a transparent full-screen root
@@ -202,17 +201,10 @@ pub fn hero_rect(screen: AppScreen) -> Option<[f32; 4]> {
 pub fn hero_overlay(
     commands: &mut Commands,
     root_marker: impl Bundle,
-    frac: [f32; 4],
+    _frac: [f32; 4],
     justify: JustifyContent,
 ) -> Entity {
-    let [left, top, width, height] = frac;
-    let left_pct = left * 100.0;
-    let top_pct = top * 100.0;
-    let w_pct = width * 100.0;
-    let h_pct = height * 100.0;
-    let right_pct = (100.0 - left_pct - w_pct).max(0.0);
-    let bottom_start = top_pct + h_pct;
-
+    // Transparent full-screen root — the live screensaver fills the window behind.
     let root = commands
         .spawn((
             Node {
@@ -221,6 +213,8 @@ pub fn hero_overlay(
                 left: Val::Px(0.0),
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
                 ..default()
             },
             // Sit above the screensaver's endgame ceremony UI, which the running
@@ -230,84 +224,22 @@ pub fn hero_overlay(
         ))
         .id();
 
-    // Opaque Bone bar above the hero.
+    // A single translucent card floating over the live scene; returned for the
+    // caller to fill with text + controls. Bone at 0.92 keeps the dark UI text
+    // readable while the glowing lattice shows through around it.
     node(
         commands,
         root,
         Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(0.0),
-            left: Val::Px(0.0),
-            width: Val::Percent(100.0),
-            height: Val::Percent(top_pct),
-            ..default()
-        },
-        palette::BONE_SRGB,
-    );
-    // Opaque Bone bar to the left of the hero.
-    node(
-        commands,
-        root,
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Percent(top_pct),
-            left: Val::Px(0.0),
-            width: Val::Percent(left_pct),
-            height: Val::Percent(h_pct),
-            ..default()
-        },
-        palette::BONE_SRGB,
-    );
-    // Opaque Bone bar to the right of the hero.
-    node(
-        commands,
-        root,
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Percent(top_pct),
-            right: Val::Px(0.0),
-            width: Val::Percent(right_pct),
-            height: Val::Percent(h_pct),
-            ..default()
-        },
-        palette::BONE_SRGB,
-    );
-    // Hairline frame around the (transparent) hero rectangle — interior left empty
-    // so the camera-viewport 3D shows through.
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Percent(top_pct),
-            left: Val::Percent(left_pct),
-            width: Val::Percent(w_pct),
-            height: Val::Percent(h_pct),
-            border: UiRect::all(Val::Px(1.5)),
-            ..default()
-        },
-        BorderColor::all(palette::STONE_SRGB),
-        ChildOf(root),
-    ));
-
-    // Opaque Bone content panel filling everything below the hero; returned to the
-    // caller to fill with text and controls.
-    node(
-        commands,
-        root,
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Percent(bottom_start),
-            left: Val::Px(0.0),
-            width: Val::Percent(100.0),
-            height: Val::Percent((100.0 - bottom_start).max(0.0)),
+            max_width: Val::Px(560.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
             justify_content: justify,
-            padding: UiRect::all(Val::Px(20.0)),
-            row_gap: Val::Px(8.0),
-            overflow: Overflow::clip(),
+            padding: UiRect::all(Val::Px(28.0)),
+            row_gap: Val::Px(10.0),
             ..default()
         },
-        palette::BONE_SRGB,
+        Color::srgba(0.98, 0.976, 0.961, 0.92),
     )
 }
 

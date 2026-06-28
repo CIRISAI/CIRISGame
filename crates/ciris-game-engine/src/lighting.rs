@@ -20,7 +20,7 @@ pub fn spawn_rig(commands: &mut Commands, scale: f32) {
         scale,
         Vec3::new(6.67, 9.17, 5.00),
         Color::srgb_u8(0xFF, 0xE5, 0xCC),
-        BASE_LUX * 1.6,
+        BASE_LUX * 1.1,
         true,
     );
     // Fill — cool linen, lower-left, half strength.
@@ -47,7 +47,9 @@ pub fn spawn_rig(commands: &mut Commands, scale: f32) {
     // keeps shadows cool against the warm key.
     commands.insert_resource(GlobalAmbientLight {
         color: palette::BOROSILICATE_SRGB,
-        brightness: 350.0,
+        // Low ambient against the dark dome so the glow reads (was 350, which
+        // flooded the scene to a pale wash).
+        brightness: 70.0,
         ..default()
     });
 }

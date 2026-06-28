@@ -52,9 +52,11 @@ fn apply_gradient(mesh: &mut Mesh, radius: f32) {
         return;
     };
 
-    let bottom = palette::OCHRE_LINEAR.to_linear();
-    let mid = palette::LINEN_LINEAR.to_linear();
-    let top = palette::BONE_LINEAR.to_linear();
+    // Dark warm void with a deep Ochre ember at the horizon, so the lit glass and
+    // glowing pigment cores read against it (vs the old near-white Bone wash).
+    let bottom = LinearRgba::rgb(0.184, 0.101, 0.059); // deep Ochre ember (horizon)
+    let mid = LinearRgba::rgb(0.040, 0.034, 0.030); // dim warm
+    let top = palette::INK_LINEAR.to_linear(); // near-black warm void overhead
 
     let colors: Vec<[f32; 4]> = positions
         .iter()

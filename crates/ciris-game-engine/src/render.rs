@@ -126,7 +126,7 @@ pub fn run_app() {
     // The screensaver below keeps advancing in every state.
     .add_plugins((state::plugin, intro::plugin, wizard::plugin))
     .init_resource::<i18n::Localization>()
-    .insert_resource(ClearColor(palette::BONE_SRGB))
+    .insert_resource(ClearColor(palette::INK_SRGB))
     .insert_resource(BoardResource(GameState::new(
         DEFAULT_BOARD_N,
         seed_from_counter(0),
@@ -260,7 +260,7 @@ fn setup(
         Msaa::Off,
         Tonemapping::AgX,
         Bloom {
-            intensity: 0.18,
+            intensity: 0.28,
             composite_mode: BloomCompositeMode::EnergyConserving,
             ..default()
         },

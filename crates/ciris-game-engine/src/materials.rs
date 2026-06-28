@@ -14,7 +14,7 @@ use ciris_game_engine_core::Steward;
 /// Inner-core emissive intensity (DESIGN_BRIEF §3.3, range `[0.4, 1.8]`). Tuned
 /// near the top of the range so the cores read as lit pigment through the §2.3
 /// bloom rather than as flat matte spheres.
-pub const CORE_EMISSIVE: f32 = 1.5;
+pub const CORE_EMISSIVE: f32 = 3.0;
 
 /// Kaolin's mandatory 2 px Ink ring (§2.1 / §3.3) is approximated with an
 /// inverted-hull outline sphere at this fraction over the core radius.

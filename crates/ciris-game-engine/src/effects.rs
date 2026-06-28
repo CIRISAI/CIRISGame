@@ -345,10 +345,7 @@ pub(crate) fn sync_effects(
                 rotation: Quat::from_rotation_arc(Vec3::Y, dir),
                 scale: Vec3::new(1.0, start_len, 1.0),
             };
-            // The pipe's vertical half-extent (along world up) for the gravity fill:
-            // its length component projected onto Y, plus the tube radius.
-            let half_extent = dir.y.abs() * (PIPE_LEN * 0.5) + PIPE_RADIUS;
-            let material = pipe_materials.add(pipe::material(steward, center, half_extent));
+            let material = pipe_materials.add(pipe::material(steward));
             let pipe = commands
                 .spawn((
                     Mesh3d(assets.pipe_mesh.clone()),
