@@ -96,8 +96,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let nrm = normalize(in.world_normal);
     let view_dir = normalize(view.world_position.xyz - in.world_position.xyz);
     let fres = pow(1.0 - clamp(dot(nrm, view_dir), 0.0, 1.0), 1.8);
-    // Selection: the sphere under the cursor swirls with extra light.
-    let sel = hover.w * exp(-distance(in.world_position.xyz, hover.xyz) * 1.6);
+    // Selection: ONLY the exact cell under the cursor lights (tight falloff so
+    // neighbours don't glow — the spikes show the connections instead).
+    let sel = hover.w * exp(-distance(in.world_position.xyz, hover.xyz) * 6.0);
 
     if (color.a >= 0.999) {
         // CLEAR-GLASS MARBLE / TUBE WITH GAS INSIDE — opaque, so other stones /

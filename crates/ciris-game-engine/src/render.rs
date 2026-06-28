@@ -29,7 +29,7 @@ use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
     attract, cube, effects, endgame, fonts, hover, i18n, intro, lighting, materials, mist,
-    navigation, orb, plasma, screensaver, signets, state, topology, ui_theme, wizard,
+    navigation, orb, plasma, screensaver, signets, spikes, state, topology, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -146,6 +146,8 @@ pub fn run_app() {
     .add_plugins(topology::plugin)
     // The four Steward Signets (E/W/N/S orientation anchors).
     .add_plugins(signets::plugin)
+    // Peer-spike hints (which marbles are adjacent in the current embedding).
+    .add_plugins(spikes::plugin)
     // Cursor-attention: hovered cell glows + plasma rushes inward (hover.rs).
     .add_plugins(hover::plugin)
     // Load the §5.1 UI faces so the front-of-house text actually renders.
@@ -513,6 +515,9 @@ fn setup(
 
     // Tier-C drama: one hidden per-cell mist volume + material (DESIGN_BRIEF §3.6).
     mist::setup_mist(&mut commands, &mut meshes, &mut mist_materials, &centers);
+
+    // Peer-spike hint pool (12 per cell), oriented each frame for placeable cells.
+    spikes::setup_spikes(&mut commands, &mut meshes, &mut orb_materials, count);
 
     commands.insert_resource(assets);
     commands.insert_resource(CellEntities { frame, core, ring });
