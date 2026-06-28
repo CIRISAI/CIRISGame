@@ -25,8 +25,8 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use crate::plasma::PlasmaMaterial;
 use crate::state::AppScreen;
 use crate::{
-    effects, endgame, environment, geometry, i18n, intro, lighting, materials, mist, navigation,
-    palette, pipe, plasma, screensaver, state, ui_theme, wizard,
+    effects, endgame, environment, fonts, geometry, hover, i18n, intro, lighting, materials, mist,
+    navigation, palette, pipe, plasma, screensaver, state, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -126,6 +126,10 @@ pub fn run_app() {
     // Liquid-pigment pipes: the custom `PipeMaterial` + the camera-driven slosh.
     .add_plugins(pipe::plugin)
     .add_plugins(plasma::plugin)
+    // Cursor-attention: hovered cell glows + plasma rushes inward (hover.rs).
+    .add_plugins(hover::plugin)
+    // Load the §5.1 UI faces so the front-of-house text actually renders.
+    .add_plugins(fonts::plugin)
     // Front-of-house: the Intro → Setup → Playing state machine (`state.rs`),
     // the click-through intro (`intro.rs`), and the setup wizard (`wizard.rs`).
     // The screensaver below keeps advancing in every state.
@@ -266,7 +270,7 @@ fn setup(
         Msaa::Off,
         Tonemapping::AgX,
         Bloom {
-            intensity: 0.28,
+            intensity: 0.42,
             composite_mode: BloomCompositeMode::EnergyConserving,
             ..default()
         },
@@ -338,6 +342,10 @@ fn setup(
             )),
         ],
     };
+
+    // Share the one plasma handle with `hover.rs` so it can drive the
+    // cursor-attention uniform on a single material per frame.
+    commands.insert_resource(plasma::PlasmaHandle(assets.plasma_mat.clone()));
 
     // ── one persistent frame + core + ring entity per cell ──────────────
     let count = board.0.board.len();

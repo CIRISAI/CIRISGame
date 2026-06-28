@@ -220,5 +220,20 @@ pub fn plugin(app: &mut App) {
     app.init_state::<AppScreen>()
         .insert_resource(mode)
         .insert_resource(RosterConfig::default_for(mode))
-        .insert_resource(ViewConfig::default());
+        .insert_resource(ViewConfig::default())
+        .add_systems(Update, skip_to_game);
+}
+
+/// Escape hatch: pressing Escape from Intro or Setup jumps straight to
+/// [`AppScreen::Playing`], dismissing the whole front-of-house. The roster/view
+/// resources already hold working defaults, so skipping is always safe — and it
+/// guarantees the overlay can never trap the player, whatever the wizard state.
+fn skip_to_game(
+    keys: Res<ButtonInput<KeyCode>>,
+    screen: Res<State<AppScreen>>,
+    mut next: ResMut<NextState<AppScreen>>,
+) {
+    if *screen.get() != AppScreen::Playing && keys.just_pressed(KeyCode::Escape) {
+        next.set(AppScreen::Playing);
+    }
 }

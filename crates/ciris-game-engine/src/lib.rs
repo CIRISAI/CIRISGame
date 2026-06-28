@@ -37,7 +37,13 @@ mod endgame;
 mod environment;
 
 #[cfg(feature = "render")]
+mod fonts;
+
+#[cfg(feature = "render")]
 mod geometry;
+
+#[cfg(feature = "render")]
+mod hover;
 
 #[cfg(feature = "render")]
 mod i18n;

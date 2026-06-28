@@ -12,6 +12,8 @@
 @group(3) @binding(0) var<uniform> tint: vec4<f32>;
 // x = flow speed; y = spatial freq; z = floor brightness; w = glow gain.
 @group(3) @binding(1) var<uniform> params: vec4<f32>;
+// xyz = cursor focus point (world); w = strength [0,1]. 0 = resting cage.
+@group(3) @binding(2) var<uniform> hover: vec4<f32>;
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -27,8 +29,19 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let n = clamp(w * 0.125 + 0.5, 0.0, 1.0);
 
     // Floor brightness keeps the cage always faintly visible; peaks glow.
-    let intensity = params.z + (1.0 - params.z) * n;
+    var intensity = params.z + (1.0 - params.z) * n;
+
+    // Cursor attention: the plasma rushes IN toward the focus point. `prox`
+    // peaks at the hovered cell and falls off with distance; an inward-moving
+    // pulse (phase advances with −distance) sells the "rushing in" motion.
+    let hd = distance(p, hover.xyz);
+    let prox = exp(-hd * 1.7);
+    let rush = 0.55 + 0.45 * sin(hd * (f * 2.2) - globals.time * (params.x * 7.0));
+    let attn = hover.w * prox * rush;
+    intensity = intensity + attn * 2.6;
+
+    // HDR (>1) at peaks + near the cursor so Bloom turns the strands ethereal.
     let col = tint.rgb * (params.w * intensity);
-    let alpha = tint.a * intensity;
+    let alpha = clamp(tint.a * intensity, 0.0, 1.0);
     return vec4<f32>(col, alpha);
 }

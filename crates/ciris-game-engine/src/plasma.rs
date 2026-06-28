@@ -16,11 +16,12 @@ use bevy::shader::ShaderRef;
 
 /// Ethereal plasma tint (linear), `a` = base opacity. Cool Lapis-cyan so the
 /// cage reads as a calm electric haze against the warm void + warm pigment cores.
-const TINT: LinearRgba = LinearRgba::new(0.34, 0.58, 0.84, 0.4);
+const TINT: LinearRgba = LinearRgba::new(0.34, 0.58, 0.84, 0.55);
 /// x = flow speed, y = spatial freq, z = floor brightness, w = glow gain.
-/// Gentle + ethereal: slow drift, soft large waves, a soft constant haze with
-/// quiet peaks (so the cage reads as a calm field, not a busy neon web).
-const PARAMS: Vec4 = Vec4::new(0.5, 1.2, 0.28, 1.15);
+/// Glow gain is pushed well past 1.0 so the wave peaks land deep in HDR and
+/// Bloom bleeds the thin strands into a soft glowing cage (so it reads as
+/// *plasma*, not flat 1-px wireframe). Floor keeps a calm constant haze.
+const PARAMS: Vec4 = Vec4::new(0.55, 1.25, 0.36, 3.4);
 
 #[derive(Asset, AsBindGroup, TypePath, Clone)]
 pub struct PlasmaMaterial {
@@ -28,6 +29,11 @@ pub struct PlasmaMaterial {
     pub tint: LinearRgba,
     #[uniform(1)]
     pub params: Vec4,
+    /// Cursor "attention": `xyz` = world-space focus point, `w` = strength
+    /// `[0,1]`. The shader makes the cage brighten and rush inward toward this
+    /// point (`hover.rs` drives it every frame); `w = 0` is the resting cage.
+    #[uniform(2)]
+    pub hover: Vec4,
 }
 
 impl Default for PlasmaMaterial {
@@ -35,6 +41,7 @@ impl Default for PlasmaMaterial {
         Self {
             tint: TINT,
             params: PARAMS,
+            hover: Vec4::ZERO,
         }
     }
 }
@@ -48,6 +55,11 @@ impl Material for PlasmaMaterial {
         AlphaMode::Blend
     }
 }
+
+/// The single shared plasma material handle (every empty cell clones it), so
+/// `hover.rs` can drive the cursor-attention uniform on one material per frame.
+#[derive(Resource)]
+pub(crate) struct PlasmaHandle(pub Handle<PlasmaMaterial>);
 
 /// Register the plasma material plugin. Added from `render::run_app`.
 pub(crate) fn plugin(app: &mut App) {
