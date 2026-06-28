@@ -254,6 +254,10 @@ fn setup(
             ..default()
         },
         Hdr,
+        // HDR Rgba16Float can't be multisampled (esp. on the webgl2 build), and a
+        // mix of HDR/non-HDR cameras renders magenta on Metal (bevy #6754) — so
+        // BOTH cameras are Hdr + Msaa::Off, consistently, in every state.
+        Msaa::Off,
         Tonemapping::AgX,
         Bloom {
             intensity: 0.18,
@@ -272,6 +276,10 @@ fn setup(
     // the 3D (higher order, no clear) and is the default target for every UI node.
     commands.spawn((
         Camera2d,
+        // Match the 3D camera's HDR-ness: a mix of HDR + non-HDR cameras breaks
+        // rendering to magenta on Metal (bevy #6754). Both cameras Hdr + Msaa::Off.
+        Hdr,
+        Msaa::Off,
         Camera {
             order: 1,
             clear_color: ClearColorConfig::None,
