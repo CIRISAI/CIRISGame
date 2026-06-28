@@ -68,17 +68,64 @@ const EDGES: [(usize, usize); 24] = [
 /// filled so the `StandardMaterial` vertex layout is satisfied on every backend
 /// (the material is unlit, so their values are immaterial).
 pub fn wireframe_mesh() -> Mesh {
-    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(EDGES.len() * 2);
-    for &(a, b) in &EDGES {
-        positions.push(VERTICES[a]);
-        positions.push(VERTICES[b]);
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut normals: Vec<[f32; 3]> = Vec::new();
+    let mut uvs: Vec<[f32; 2]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+
+    let radius = 0.015;
+    let sides = 6;
+
+    for &(a_idx, b_idx) in &EDGES {
+        let a = Vec3::from(VERTICES[a_idx]);
+        let b = Vec3::from(VERTICES[b_idx]);
+        let dir = (b - a).normalize();
+
+        let up_vec = if dir.y.abs() < 0.99 { Vec3::Y } else { Vec3::Z };
+        let right = up_vec.cross(dir).normalize();
+        let up = dir.cross(right).normalize();
+
+        let base_idx = positions.len() as u32;
+
+        for i in 0..sides {
+            let angle = (i as f32) * std::f32::consts::TAU / (sides as f32);
+            let (sin, cos) = angle.sin_cos();
+            let normal = right * cos + up * sin;
+
+            // vertex at A
+            positions.push((a + normal * radius).into());
+            normals.push(normal.into());
+            uvs.push([0.0, 0.0]);
+
+            // vertex at B
+            positions.push((b + normal * radius).into());
+            normals.push(normal.into());
+            uvs.push([0.0, 1.0]);
+        }
+
+        for i in 0..sides {
+            let next = (i + 1) % sides;
+            let a0 = base_idx + i * 2;
+            let b0 = base_idx + i * 2 + 1;
+            let a1 = base_idx + next * 2;
+            let b1 = base_idx + next * 2 + 1;
+
+            indices.push(a0);
+            indices.push(a1);
+            indices.push(b0);
+
+            indices.push(a1);
+            indices.push(b1);
+            indices.push(b0);
+        }
     }
-    let n = positions.len();
+
     Mesh::new(
-        PrimitiveTopology::LineList,
+        PrimitiveTopology::TriangleList,
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; n])
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; n])
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(bevy::render::mesh::Indices::U32(indices))
 }
