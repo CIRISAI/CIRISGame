@@ -34,7 +34,7 @@ Bevy scene with rhombic-dodecahedral lattice at integer world positions, glass s
 
 ### 6. Game logic (DESIGN_BRIEF §4)
 
-Mesh tracking, same-color adjacency, pipe formation, mesh-merge, atari detection at |M|=6, destructive transition at |M|=7, Algorithm A dispersal, score (`permadead_count`), end-state detection.
+Mesh tracking, same-color adjacency, pipe formation, mesh-merge, atari detection at |M|=6, destructive transition at |M|=7, Algorithm A dispersal, the no-crossing rule with forced-pass turn handling and all-pass deadlock termination (§4.11, `crossing::is_crossing_illegal`), score (`permadead_count`), end-state detection.
 
 ### 7. Camera systems (DESIGN_BRIEF §4.8)
 

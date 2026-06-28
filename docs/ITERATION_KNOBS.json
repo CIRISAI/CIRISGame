@@ -1018,5 +1018,205 @@
     "effect": "WILD chord duration.",
     "section": "Sound",
     "applyMode": "next-game"
+  },
+  {
+    "knob": "rules.noCrossingRule",
+    "defaultValue": "on",
+    "range": "on | off",
+    "effect": "§4.11 no-crossing rule: a same-color bond may not cross an existing different-color bond on a shared lattice face, and a steward with no legal placement is forced to pass. Native-only toggle; browser is fixed-on like the rule of seven. Off restores the pre-rule constructive-only game (no forced pass, no cross-deadlock).",
+    "section": "Rules",
+    "applyMode": "next-game"
+  },
+  {
+    "knob": "space.star_density",
+    "defaultValue": "1.0",
+    "range": "0.0 .. 3.0",
+    "effect": "Star count multiplier in the §3.8 deep-space enclosure across both parallax layers; 0 = empty void, 3 = dense field.",
+    "section": "Space",
+    "applyMode": "live"
+  },
+  {
+    "knob": "space.star_bright",
+    "defaultValue": "1.0",
+    "range": "0.0 .. 3.0",
+    "effect": "Star emissive brightness; higher pushes more stars into bloom.",
+    "section": "Space",
+    "applyMode": "live"
+  },
+  {
+    "knob": "space.twinkle",
+    "defaultValue": "0.5",
+    "range": "0.0 .. 1.0",
+    "effect": "Per-star twinkle amplitude; 0 = steady pinpoints, 1 = lively shimmer.",
+    "section": "Space",
+    "applyMode": "live"
+  },
+  {
+    "knob": "space.drift",
+    "defaultValue": "0.0",
+    "range": "0.0 .. 1.0",
+    "effect": "Whole-field slow drift rate. DEFAULT OFF (0.0): the starfield is an orientation reference, so a still field reads as a fixed frame to navigate against.",
+    "section": "Space",
+    "applyMode": "live"
+  },
+  {
+    "knob": "space.nebula",
+    "defaultValue": "1.0",
+    "range": "0.0 .. 3.0",
+    "effect": "Strength of the up/down pole nebulae (cool zenith glow over +Y, warm nadir glow under -Y); 0 = pure-black poles.",
+    "section": "Space",
+    "applyMode": "live"
+  },
+  {
+    "knob": "space.up_hue",
+    "defaultValue": "#6A9BCC",
+    "range": "any hex",
+    "effect": "Hue of the cool +Y (zenith) pole nebula. Pairs with down_hue to give the vertical axis a fixed color signature.",
+    "section": "Space",
+    "applyMode": "live"
+  },
+  {
+    "knob": "space.down_hue",
+    "defaultValue": "#D97757",
+    "range": "any hex",
+    "effect": "Hue of the warm -Y (nadir) pole nebula.",
+    "section": "Space",
+    "applyMode": "live"
+  },
+  {
+    "knob": "spheres.gas_luma",
+    "defaultValue": "1.0",
+    "range": "0.0 .. 3.0",
+    "effect": "Luminance of the neon swirling-gas core (§3.3); scales how bright the gas reads inside the clear glass.",
+    "section": "Spheres",
+    "applyMode": "live"
+  },
+  {
+    "knob": "spheres.gas_sat",
+    "defaultValue": "1.0",
+    "range": "0.0 .. 1.5",
+    "effect": "Saturation of the gas core; <1 mutes toward the steward pigment's gray, >1 pushes neon.",
+    "section": "Spheres",
+    "applyMode": "live"
+  },
+  {
+    "knob": "spheres.prism",
+    "defaultValue": "0.5",
+    "range": "0.0 .. 1.0",
+    "effect": "Strength of the optional X-cube dichroic prism on the glass fresnel rim (§3.2); 0 = plain rim catch, 1 = full spectral split at grazing angles.",
+    "section": "Spheres",
+    "applyMode": "live"
+  },
+  {
+    "knob": "spheres.core_size",
+    "defaultValue": "0.6",
+    "range": "0.2 .. 0.95",
+    "effect": "Gas-core radius as a fraction of the marble (§3.3); small = bright nucleus deep in clear glass, large = gas fills most of the marble.",
+    "section": "Spheres",
+    "applyMode": "live"
+  },
+  {
+    "knob": "glass.ior",
+    "defaultValue": "1.50",
+    "range": "1.0 .. 2.0",
+    "effect": "Index of refraction of the marble glass (§3.2); higher bends the starfield env map more at the rim.",
+    "section": "Glass",
+    "applyMode": "live"
+  },
+  {
+    "knob": "glass.thickness",
+    "defaultValue": "0.18",
+    "range": "0.05 .. 0.40",
+    "effect": "Live-panel handle for the glass refraction band width (§3.2; spec knob shell.thickness). Thicker = more lensing on the gas core.",
+    "section": "Glass",
+    "applyMode": "live"
+  },
+  {
+    "knob": "glass.reflect",
+    "defaultValue": "0.5",
+    "range": "0.0 .. 1.0",
+    "effect": "StandardMaterial.reflectance of the marble (§3.2); higher mirrors more starfield off the glass surface.",
+    "section": "Glass",
+    "applyMode": "live"
+  },
+  {
+    "knob": "glass.rough",
+    "defaultValue": "0.04",
+    "range": "0.0 .. 0.5",
+    "effect": "perceptual_roughness of the marble glass (§3.2); 0 = mirror-clear, higher = frosted.",
+    "section": "Glass",
+    "applyMode": "live"
+  },
+  {
+    "knob": "layout.marble_size",
+    "defaultValue": "0.42",
+    "range": "0.20 .. 0.60",
+    "effect": "World-unit glass-marble (shell) radius (§3.1); larger marbles crowd the channel, smaller open it.",
+    "section": "Layout",
+    "applyMode": "live"
+  },
+  {
+    "knob": "layout.peer_dist",
+    "defaultValue": "1.0",
+    "range": "0.5 .. 2.0",
+    "effect": "Multiplier on the face-neighbor center distance (§3.1); spreads or tightens the whole lattice without changing topology.",
+    "section": "Layout",
+    "applyMode": "live"
+  },
+  {
+    "knob": "layout.tube_width",
+    "defaultValue": "0.055",
+    "range": "0.030 .. 0.090",
+    "effect": "Live-panel handle for tube (bond) radius (§3.4; spec knob pipe.radius). Thicker reads as cables, thinner as filaments.",
+    "section": "Layout",
+    "applyMode": "live"
+  },
+  {
+    "knob": "layout.select_glow",
+    "defaultValue": "1.0",
+    "range": "0.0 .. 3.0",
+    "effect": "Intensity of the §4.8 selection glint that the cursor/touch selection casts consistently across spheres, tubes, and empty-position markers.",
+    "section": "Layout",
+    "applyMode": "live"
+  },
+  {
+    "knob": "post.bloom",
+    "defaultValue": "0.45",
+    "range": "0.0 .. 1.0",
+    "effect": "Live-panel handle for bloom halo strength (§2.3; spec knob bloom.strength). >0.7 reads as hot.",
+    "section": "Post",
+    "applyMode": "live"
+  },
+  {
+    "knob": "signets.bright",
+    "defaultValue": "1.0",
+    "range": "0.0 .. 3.0",
+    "effect": "Idle brightness floor of the four steward signets (§3.10) at the horizontal cardinals.",
+    "section": "Signets",
+    "applyMode": "live"
+  },
+  {
+    "knob": "signets.active_boost",
+    "defaultValue": "4.0",
+    "range": "1.0 .. 8.0",
+    "effect": "Brightness multiplier on the signet of the steward whose turn it is (§3.10); ~4x makes the active player legible from any camera pose.",
+    "section": "Signets",
+    "applyMode": "live"
+  },
+  {
+    "knob": "signets.size",
+    "defaultValue": "0.3",
+    "range": "0.1 .. 1.0",
+    "effect": "World-unit size of each billboarded steward signet emblem.",
+    "section": "Signets",
+    "applyMode": "live"
+  },
+  {
+    "knob": "signets.distance",
+    "defaultValue": "1.80",
+    "range": "1.20 .. 3.00",
+    "effect": "Signet ring distance as a multiple of N (§3.10), matching the seat ring (§4.8).",
+    "section": "Signets",
+    "applyMode": "live"
   }
 ]

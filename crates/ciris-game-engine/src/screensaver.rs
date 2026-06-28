@@ -123,13 +123,16 @@ pub fn drive(
 /// Apply one Easy-policy move for the current steward. Returns whether the board
 /// changed. Never panics (a rejected move is simply a no-op).
 fn step_ai(gs: &mut GameState, rng: &mut ChaCha8Rng) -> bool {
-    let mv = match choose_move(gs, rng) {
-        Some(coord) => Move::place(coord),
-        // No legal placement remains but a crater is still owed: resolve it with
-        // an auto-layout. The placement coord is ignored when the board is full.
-        None => Move::place(Coord::new(0, 0, 0)),
-    };
-    gs.apply_move(mv).is_ok()
+    if let Some(coord) = choose_move(gs, rng) {
+        return gs.apply_move(Move::place(coord)).is_ok();
+    }
+    // No legal placement for this steward. Either it's cross-blocked while empties
+    // remain (no-crossing rule, §4.11) → forced pass; or a crater is still owed
+    // (endgame rebuild turn) → resolve it with an auto-layout (coord ignored).
+    if gs.must_pass() {
+        return gs.pass().is_ok();
+    }
+    gs.apply_move(Move::place(Coord::new(0, 0, 0))).is_ok()
 }
 
 /// Easy policy: a uniformly-random legal cell, but prefer cells that do *not*
@@ -137,7 +140,9 @@ fn step_ai(gs: &mut GameState, rng: &mut ChaCha8Rng) -> bool {
 /// when at least one safe legal cell exists. Falls back to any legal cell when
 /// every option would collapse.
 fn choose_move(gs: &GameState, rng: &mut ChaCha8Rng) -> Option<Coord> {
-    let legal = gs.legal_moves();
+    // Colour-aware legal moves: empties minus any the no-crossing rule (§4.11)
+    // forbids for the steward to move.
+    let legal = gs.current_legal_moves();
     if legal.is_empty() {
         return None;
     }

@@ -28,8 +28,8 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
-    attract, cube, effects, endgame, environment, fonts, hover, i18n, intro, lighting, materials,
-    mist, navigation, orb, palette, plasma, screensaver, state, topology, ui_theme, wizard,
+    attract, cube, effects, endgame, fonts, hover, i18n, intro, lighting, materials, mist,
+    navigation, orb, plasma, screensaver, signets, state, topology, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -65,6 +65,8 @@ struct RenderAssets {
     /// Steward orb material per slot (0..=3) — the whole live sphere: thick clear
     /// glass + two swirling gasses, one surface (DESIGN_BRIEF §3.2/§3.3).
     core_orb: [Handle<OrbMaterial>; 4],
+    /// Steward tube material per slot — same look, gas fills the whole tube.
+    tube_orb: [Handle<OrbMaterial>; 4],
 }
 
 /// Per-cell entity table, indexed by linear board index.
@@ -142,6 +144,8 @@ pub fn run_app() {
     .add_plugins(cube::plugin)
     // Topology widget: re-embed the play state as cube / sphere / torus / möbius.
     .add_plugins(topology::plugin)
+    // The four Steward Signets (E/W/N/S orientation anchors).
+    .add_plugins(signets::plugin)
     // Cursor-attention: hovered cell glows + plasma rushes inward (hover.rs).
     .add_plugins(hover::plugin)
     // Load the §5.1 UI faces so the front-of-house text actually renders.
@@ -156,7 +160,7 @@ pub fn run_app() {
         wizard::plugin,
     ))
     .init_resource::<i18n::Localization>()
-    .insert_resource(ClearColor(palette::INK_SRGB))
+    .insert_resource(ClearColor(Color::BLACK))
     .insert_resource(BoardResource(GameState::new(
         DEFAULT_BOARD_N,
         seed_from_counter(0),
@@ -184,7 +188,10 @@ pub fn run_app() {
             // Per-frame motion reads the parameters above (one-frame latency
             // on a fresh board is imperceptible at the screensaver cadence).
             effects::breathe_cores,
-            mist::animate_mist,
+            // Dead-cell mist disabled: it rendered as erroneous smoke artifacts
+            // (raymarch centred on the cube spot, didn't follow the topology) and
+            // doesn't fit the deep-space look. Dead / perma-dead cells still read
+            // via their dimmed / Verdigris shells. (`mist::animate_mist` retired.)
             // Contain the 3D to the hero rect in Intro/Setup, full in Playing.
             update_camera_viewport,
             sync_minimap,
@@ -318,6 +325,10 @@ fn setup(
         },
         PanOrbitCamera {
             radius: Some(1.8 * n as f32),
+            // Start at 45° yaw so we look BETWEEN two steward signets (which sit
+            // on the cardinal axes), plus a gentle downward tilt.
+            yaw: Some(std::f32::consts::FRAC_PI_4),
+            pitch: Some(0.35),
             ..default()
         },
         MainCam,
@@ -395,9 +406,9 @@ fn setup(
         IsDefaultUiCamera,
     ));
 
-    // ── lighting rig + horizon dome (DESIGN_BRIEF §2.2 / §3.8) ───────────
+    // ── lighting rig (DESIGN_BRIEF §2.2). The old warm horizon dome is replaced
+    // by the deep-space starfield enclosure (see `cube.rs`). ───────────
     lighting::spawn_rig(&mut commands, scale);
-    environment::spawn_dome(&mut commands, &mut meshes, &mut materials, scale);
 
     // ── shared meshes + materials (DESIGN_BRIEF §3.1/§3.2/§3.3/§3.6) ─────
     let assets = RenderAssets {
@@ -422,12 +433,19 @@ fn setup(
             orb_materials.add(orb::material(Steward::Verdigris)),
             orb_materials.add(orb::material(Steward::Kaolin)),
         ],
+        tube_orb: [
+            orb_materials.add(orb::tube_material(Steward::Sienna)),
+            orb_materials.add(orb::tube_material(Steward::Lapis)),
+            orb_materials.add(orb::tube_material(Steward::Verdigris)),
+            orb_materials.add(orb::tube_material(Steward::Kaolin)),
+        ],
     };
 
     // Hand every orb material to `hover.rs` so it can drive the selection uniform
-    // (the sphere under the cursor swirls with light).
+    // (the surface under the cursor glints with light).
     let mut orb_handles = vec![assets.empty_orb.clone()];
     orb_handles.extend(assets.core_orb.iter().cloned());
+    orb_handles.extend(assets.tube_orb.iter().cloned());
     commands.insert_resource(orb::OrbHandles(orb_handles));
     commands.insert_resource(GlassHandle(assets.glass_mat.clone()));
 
@@ -487,8 +505,7 @@ fn setup(
         &mut commands,
         &mut meshes,
         &mut materials,
-        assets.glass_mat.clone(),
-        assets.core_orb.clone(),
+        assets.tube_orb.clone(),
         n,
         count,
         &core,
@@ -577,18 +594,20 @@ fn sync_board(
             // Live → marble: thick clear glass shell refracting an opaque neon
             // core inside it (§3.2/§3.3).
             CellState::Live(steward) => {
+                // Unified clear-glass marble: ONE opaque sphere (the shell mesh)
+                // whose material renders the glass + gas + a refracted/reflected
+                // world-cube — so other stones never show through it. The
+                // separate inner core entity is hidden (the gas lives in the
+                // marble material now).
                 commands
                     .entity(frame)
                     .insert((
                         Mesh3d(assets.shell_mesh.clone()),
-                        MeshMaterial3d(assets.glass_mat.clone()),
+                        MeshMaterial3d(assets.core_orb[steward.slot() as usize].clone()),
                         Visibility::Visible,
                     ))
-                    .remove::<MeshMaterial3d<OrbMaterial>>();
-                commands.entity(core).insert((
-                    MeshMaterial3d(assets.core_orb[steward.slot() as usize].clone()),
-                    Visibility::Visible,
-                ));
+                    .remove::<MeshMaterial3d<StandardMaterial>>();
+                commands.entity(core).insert(Visibility::Hidden);
                 ring_visible = steward == Steward::Kaolin;
             }
             // Temp-dead → darkened shell, core off (§3.6).

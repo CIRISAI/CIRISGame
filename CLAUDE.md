@@ -63,6 +63,7 @@ CI matrix in `.github/workflows/build.yml` covers linux-x86_64 / macOS arm64 / m
 
 - The four stewards' colors and pigment names
 - The rule of seven (configurable in native, fixed 7 in browser)
+- The no-crossing rule (§4.11): a same-color bond may not cross a live different-color bond on a shared face; forced pass only when a steward has zero legal moves. Locked-on in browser, native-only toggle — same posture as the rule of seven
 - M-1 framing as the cooperative-all-survive ending
 - The CEG 1+4 primitive shape: `scores` + `delegates_to` / `supersedes` / `withdraws` / `recants`
 - Bevy 0.19 + `bevy_panorbit_camera = "0.35"` stack

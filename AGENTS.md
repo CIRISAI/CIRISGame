@@ -20,8 +20,11 @@ work before you push.
 What renders **today** on the github.io page:
 
 - ✅ WebGPU wasm boots and renders (HDR + Bloom + AgX) full-window.
-- ✅ Self-running **screensaver**: four AI stewards play forever, glass shells +
-  emissive pigment cores, gas pipes, dark warm void.
+- ✅ Self-running **screensaver**: four AI stewards play forever as **glass
+  marbles** (a neon swirling-gas core inside thick clear glass that reflects only
+  the starfield), joined by **straight gas tubes**, inside a **deep-space
+  starfield enclosure** with up/down pole nebulae and four **steward signets** on
+  the cardinals (the active steward's burns ~4× brighter).
 - ✅ Front-of-house **text renders** (Inter / Source Serif 4 / JetBrains Mono are
   now shipped + loaded — see `fonts.rs`). The intro + setup wizard are legible.
 - ✅ **Escape** dismisses the whole front-of-house straight to `Playing`.

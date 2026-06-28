@@ -21,14 +21,19 @@ use crate::topology::{PeerDistance, TubeWidth};
 use crate::ui_theme as theme;
 use ciris_game_engine_core::DEFAULT_BOARD_N;
 
-/// The play-area cube material: five faces `color` (a = opacity), the +Y face
-/// `accent`.
+/// The deep-space starfield enclosure material: `color`/`accent` are the nebula
+/// base/accent tints; `space` = (density, brightness, twinkle, drift); `space2.x`
+/// = nebula amount.
 #[derive(Asset, AsBindGroup, TypePath, Clone)]
 pub struct CubeMaterial {
     #[uniform(0)]
     pub color: LinearRgba,
     #[uniform(1)]
     pub accent: LinearRgba,
+    #[uniform(2)]
+    pub space: Vec4,
+    #[uniform(3)]
+    pub space2: Vec4,
 }
 
 impl Material for CubeMaterial {
@@ -37,6 +42,9 @@ impl Material for CubeMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
+        // Solid deep-space backdrop (shader outputs alpha 1.0). Kept in the Blend
+        // pipeline (not Opaque) because the camera sits INSIDE the box and that's
+        // the path that reliably renders the inward-facing walls here.
         AlphaMode::Blend
     }
 
@@ -46,7 +54,7 @@ impl Material for CubeMaterial {
         _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        descriptor.primitive.cull_mode = None; // double-sided clear box
+        descriptor.primitive.cull_mode = None; // double-sided: seen from inside
         Ok(())
     }
 }
@@ -57,11 +65,16 @@ impl Material for CubeMaterial {
 pub(crate) struct Tuning {
     faces_hue: f32,
     accent_hue: f32,
-    cube_opacity: f32,
+    star_density: f32,
+    star_bright: f32,
+    twinkle: f32,
+    drift: f32,
+    nebula: f32,
     gas_luma: f32,
     gas_sat: f32,
     prism: f32,
     core_size: f32,
+    marble_size: f32,
     tube_width: f32,
     glass_ior: f32,
     glass_thick: f32,
@@ -69,25 +82,40 @@ pub(crate) struct Tuning {
     glass_rough: f32,
     bloom: f32,
     peer_dist: f32,
+    select_glow: f32,
+    signet_bright: f32,
+    signet_size: f32,
+    signet_dist: f32,
+    signet_boost: f32,
 }
 
 impl Default for Tuning {
     fn default() -> Self {
         Tuning {
-            faces_hue: 0.45,
-            accent_hue: 0.66,
-            cube_opacity: 0.06,
-            gas_luma: 4.0,
-            gas_sat: 4.0,
-            prism: 0.0,
-            core_size: 0.6,
-            tube_width: 1.0,
+            faces_hue: 0.55,  // up-pole nebula hue (cool / "sky")
+            accent_hue: 0.05, // down-pole nebula hue (warm / "ground")
+            star_density: 80.0,
+            star_bright: 1.0,
+            twinkle: 0.4,
+            drift: 0.0, // off — the starfield is an orientation reference
+            nebula: 0.1,
+            gas_luma: 2.0,
+            gas_sat: 6.0,
+            prism: 0.1,
+            core_size: 0.25,
+            marble_size: 0.4,
+            tube_width: 0.4,
             glass_ior: 1.45,
             glass_thick: 0.18,
-            glass_refl: 0.12,
+            glass_refl: 0.04,
             glass_rough: 0.08,
-            bloom: 0.18,
-            peer_dist: 1.0,
+            bloom: 0.03,
+            peer_dist: 1.16,
+            select_glow: 0.4,
+            signet_bright: 0.5,
+            signet_size: 0.5,
+            signet_dist: 15.0,
+            signet_boost: 10.0,
         }
     }
 }
@@ -96,11 +124,16 @@ impl Default for Tuning {
 enum Knob {
     FacesHue,
     AccentHue,
-    CubeOpacity,
+    StarDensity,
+    StarBright,
+    Twinkle,
+    Drift,
+    Nebula,
     GasLuma,
     GasSat,
     Prism,
     CoreSize,
+    MarbleSize,
     TubeWidth,
     GlassIor,
     GlassThick,
@@ -108,6 +141,11 @@ enum Knob {
     GlassRough,
     Bloom,
     PeerDist,
+    SelectGlow,
+    SignetBright,
+    SignetSize,
+    SignetDist,
+    SignetBoost,
 }
 
 impl Knob {
@@ -115,11 +153,16 @@ impl Knob {
         match self {
             Knob::FacesHue => t.faces_hue,
             Knob::AccentHue => t.accent_hue,
-            Knob::CubeOpacity => t.cube_opacity,
+            Knob::StarDensity => t.star_density,
+            Knob::StarBright => t.star_bright,
+            Knob::Twinkle => t.twinkle,
+            Knob::Drift => t.drift,
+            Knob::Nebula => t.nebula,
             Knob::GasLuma => t.gas_luma,
             Knob::GasSat => t.gas_sat,
             Knob::Prism => t.prism,
             Knob::CoreSize => t.core_size,
+            Knob::MarbleSize => t.marble_size,
             Knob::TubeWidth => t.tube_width,
             Knob::GlassIor => t.glass_ior,
             Knob::GlassThick => t.glass_thick,
@@ -127,17 +170,27 @@ impl Knob {
             Knob::GlassRough => t.glass_rough,
             Knob::Bloom => t.bloom,
             Knob::PeerDist => t.peer_dist,
+            Knob::SelectGlow => t.select_glow,
+            Knob::SignetBright => t.signet_bright,
+            Knob::SignetSize => t.signet_size,
+            Knob::SignetDist => t.signet_dist,
+            Knob::SignetBoost => t.signet_boost,
         }
     }
     fn adjust(self, t: &mut Tuning, d: f32) {
         match self {
             Knob::FacesHue => t.faces_hue = (t.faces_hue + d).rem_euclid(1.0),
             Knob::AccentHue => t.accent_hue = (t.accent_hue + d).rem_euclid(1.0),
-            Knob::CubeOpacity => t.cube_opacity = (t.cube_opacity + d).clamp(0.0, 1.0),
+            Knob::StarDensity => t.star_density = (t.star_density + d).clamp(30.0, 180.0),
+            Knob::StarBright => t.star_bright = (t.star_bright + d).clamp(0.2, 3.0),
+            Knob::Twinkle => t.twinkle = (t.twinkle + d).clamp(0.0, 1.0),
+            Knob::Drift => t.drift = (t.drift + d).clamp(0.0, 6.0),
+            Knob::Nebula => t.nebula = (t.nebula + d).clamp(0.0, 1.0),
             Knob::GasLuma => t.gas_luma = (t.gas_luma + d).clamp(0.2, 8.0),
             Knob::GasSat => t.gas_sat = (t.gas_sat + d).clamp(1.0, 6.0),
             Knob::Prism => t.prism = (t.prism + d).clamp(0.0, 1.0),
             Knob::CoreSize => t.core_size = (t.core_size + d).clamp(0.05, 1.8),
+            Knob::MarbleSize => t.marble_size = (t.marble_size + d).clamp(0.3, 2.5),
             Knob::TubeWidth => t.tube_width = (t.tube_width + d).clamp(0.3, 2.5),
             Knob::GlassIor => t.glass_ior = (t.glass_ior + d).clamp(1.0, 2.2),
             Knob::GlassThick => t.glass_thick = (t.glass_thick + d).clamp(0.0, 1.5),
@@ -145,11 +198,17 @@ impl Knob {
             Knob::GlassRough => t.glass_rough = (t.glass_rough + d).clamp(0.0, 0.6),
             Knob::Bloom => t.bloom = (t.bloom + d).clamp(0.0, 0.6),
             Knob::PeerDist => t.peer_dist = (t.peer_dist + d).clamp(0.3, 2.5),
+            Knob::SelectGlow => t.select_glow = (t.select_glow + d).clamp(0.0, 4.0),
+            Knob::SignetBright => t.signet_bright = (t.signet_bright + d).clamp(0.0, 12.0),
+            Knob::SignetSize => t.signet_size = (t.signet_size + d).clamp(0.1, 2.0),
+            Knob::SignetDist => t.signet_dist = (t.signet_dist + d).clamp(4.0, 20.0),
+            Knob::SignetBoost => t.signet_boost = (t.signet_boost + d).clamp(1.0, 10.0),
         }
     }
     fn fmt(self, v: f32) -> String {
         match self {
             Knob::FacesHue | Knob::AccentHue => format!("{:.0}\u{b0}", v * 360.0),
+            Knob::StarDensity => format!("{v:.0}"),
             _ => format!("{v:.2}"),
         }
     }
@@ -162,15 +221,17 @@ enum Family {
     Glass,
     Layout,
     Post,
+    Signet,
 }
 
 impl Family {
-    const ALL: [Family; 5] = [
+    const ALL: [Family; 6] = [
         Family::Cube,
         Family::Spheres,
         Family::Glass,
         Family::Layout,
         Family::Post,
+        Family::Signet,
     ];
     fn idx(self) -> usize {
         match self {
@@ -179,24 +240,30 @@ impl Family {
             Family::Glass => 2,
             Family::Layout => 3,
             Family::Post => 4,
+            Family::Signet => 5,
         }
     }
     fn name(self) -> &'static str {
         match self {
-            Family::Cube => "Cube",
+            Family::Cube => "Space",
             Family::Spheres => "Spheres",
             Family::Glass => "Glass",
             Family::Layout => "Layout",
             Family::Post => "Post",
+            Family::Signet => "Signets",
         }
     }
 }
 
 /// (knob, family, label, per-press step).
-const KNOBS: [(Knob, Family, &str, f32); 14] = [
-    (Knob::FacesHue, Family::Cube, "Faces hue", 0.06),
-    (Knob::AccentHue, Family::Cube, "Top hue", 0.06),
-    (Knob::CubeOpacity, Family::Cube, "Opacity", 0.06),
+const KNOBS: [(Knob, Family, &str, f32); 24] = [
+    (Knob::StarDensity, Family::Cube, "Star density", 10.0),
+    (Knob::StarBright, Family::Cube, "Star bright", 0.2),
+    (Knob::Twinkle, Family::Cube, "Twinkle", 0.1),
+    (Knob::Drift, Family::Cube, "Drift", 0.3),
+    (Knob::Nebula, Family::Cube, "Nebula", 0.1),
+    (Knob::FacesHue, Family::Cube, "Up hue", 0.06),
+    (Knob::AccentHue, Family::Cube, "Down hue", 0.06),
     (Knob::GasLuma, Family::Spheres, "Gas luma", 0.6),
     (Knob::GasSat, Family::Spheres, "Gas sat", 0.4),
     (Knob::Prism, Family::Spheres, "Prism", 0.1),
@@ -205,18 +272,24 @@ const KNOBS: [(Knob, Family, &str, f32); 14] = [
     (Knob::GlassThick, Family::Glass, "Thickness", 0.05),
     (Knob::GlassRefl, Family::Glass, "Reflect", 0.04),
     (Knob::GlassRough, Family::Glass, "Rough", 0.03),
+    (Knob::MarbleSize, Family::Layout, "Marble size", 0.1),
     (Knob::PeerDist, Family::Layout, "Peer dist", 0.08),
     (Knob::TubeWidth, Family::Layout, "Tube width", 0.1),
+    (Knob::SelectGlow, Family::Layout, "Select glow", 0.2),
     (Knob::Bloom, Family::Post, "Bloom", 0.03),
+    (Knob::SignetBright, Family::Signet, "Bright", 0.5),
+    (Knob::SignetBoost, Family::Signet, "Active boost", 0.5),
+    (Knob::SignetSize, Family::Signet, "Size", 0.1),
+    (Knob::SignetDist, Family::Signet, "Distance", 1.0),
 ];
 
 /// Which families are expanded. Spheres open by default; the rest collapsed.
 #[derive(Resource)]
-struct FamilyOpen([bool; 5]);
+struct FamilyOpen([bool; 6]);
 
 impl Default for FamilyOpen {
     fn default() -> Self {
-        FamilyOpen([false, true, false, false, false])
+        FamilyOpen([false, true, false, false, false, false])
     }
 }
 
@@ -278,18 +351,27 @@ fn spawn_cube(
     mut mats: ResMut<Assets<CubeMaterial>>,
     tuning: Res<Tuning>,
 ) {
-    let size = DEFAULT_BOARD_N as f32 * 6.0;
-    let mut color = hue(tuning.faces_hue, 0.45);
-    color.alpha = tuning.cube_opacity;
+    // 3× farther out than the play lattice — we float in a deep-space starfield.
+    let size = DEFAULT_BOARD_N as f32 * 18.0;
     let handle = mats.add(CubeMaterial {
-        color,
+        color: hue(tuning.faces_hue, 0.45),
         accent: hue(tuning.accent_hue, 0.5),
+        space: Vec4::new(
+            tuning.star_density,
+            tuning.star_bright,
+            tuning.twinkle,
+            tuning.drift,
+        ),
+        space2: Vec4::new(tuning.nebula, 0.0, 0.0, 0.0),
     });
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(size, size, size))),
         MeshMaterial3d(handle.clone()),
         Transform::default(),
-        bevy::camera::visibility::RenderLayers::layer(crate::render::CUBE_LAYER),
+        bevy::camera::visibility::RenderLayers::layer(0),
+        // The camera sits INSIDE this box; its AABB-vs-frustum test can cull it,
+        // so force it always-visible.
+        bevy::camera::visibility::NoFrustumCulling,
     ));
     commands.insert_resource(CubeHandle(handle));
 }
@@ -499,6 +581,9 @@ fn apply_tuning(
     mut core_scale: ResMut<CoreScale>,
     mut peer: ResMut<PeerDistance>,
     mut tube: ResMut<TubeWidth>,
+    mut marble: ResMut<crate::topology::MarbleSize>,
+    mut select_glow: ResMut<crate::hover::SelectGlow>,
+    mut signets: ResMut<crate::signets::SignetSettings>,
     mut bloom: Query<&mut Bloom, With<MainCam>>,
     mut values: Query<(&ValueText, &mut Text)>,
 ) {
@@ -508,10 +593,15 @@ fn apply_tuning(
 
     if let Some(h) = cube {
         if let Some(mut m) = cube_mats.get_mut(&h.0) {
-            let mut c = hue(tuning.faces_hue, 0.45);
-            c.alpha = tuning.cube_opacity;
-            m.color = c;
+            m.color = hue(tuning.faces_hue, 0.45);
             m.accent = hue(tuning.accent_hue, 0.5);
+            m.space = Vec4::new(
+                tuning.star_density,
+                tuning.star_bright,
+                tuning.twinkle,
+                tuning.drift,
+            );
+            m.space2 = Vec4::new(tuning.nebula, 0.0, 0.0, 0.0);
         }
     }
 
@@ -521,6 +611,10 @@ fn apply_tuning(
                 m.params.z = tuning.gas_luma;
                 m.params2.x = tuning.gas_sat;
                 m.params2.y = tuning.prism;
+                // The marble's clear-glass refraction of the world cube.
+                m.glass.x = tuning.glass_ior; // IOR bends the refracted cube
+                m.glass.y = tuning.core_size; // how far the gas core extends out
+                m.glass.w = tuning.glass_refl * 5.0; // "Reflect" → cube-edge glow
             }
         }
     }
@@ -537,6 +631,12 @@ fn apply_tuning(
     core_scale.0 = tuning.core_size;
     peer.0 = tuning.peer_dist;
     tube.0 = tuning.tube_width;
+    marble.0 = tuning.marble_size;
+    select_glow.0 = tuning.select_glow;
+    signets.bright = tuning.signet_bright;
+    signets.size = tuning.signet_size;
+    signets.dist = tuning.signet_dist;
+    signets.boost = tuning.signet_boost;
     if let Ok(mut b) = bloom.single_mut() {
         b.intensity = tuning.bloom;
     }

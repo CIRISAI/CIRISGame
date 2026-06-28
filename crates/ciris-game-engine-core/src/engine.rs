@@ -64,8 +64,14 @@ pub enum MoveError {
     OutOfBounds,
     /// The placement target is not `Empty`.
     Occupied,
+    /// The placement would create a same-colour bond crossing an existing
+    /// different-colour bond on the shared face (no-crossing rule, §4.11).
+    CrossesBond,
     /// No legal placement remains; the game is over.
     GameOver,
+    /// [`GameState::pass`] was called while the steward still has a legal move.
+    /// There is no voluntary pass — a steward with ≥1 legal move must play.
+    PassNotAllowed,
     /// A `dispersal` layout was supplied on a turn that is not a rebuild turn.
     UnexpectedDispersal,
     /// A chosen perma-dead coordinate is off the board.
@@ -131,6 +137,10 @@ pub struct GameState {
     pub history: Vec<MoveRecord>,
     /// Per-slot smouldering crater awaiting that steward's rebuild turn.
     pending: [Option<Vec<usize>>; STEWARD_COUNT],
+    /// Whether the no-crossing rule (§4.11) is enforced. Always `true` in browser
+    /// (fixed-on, like the rule of seven); a native-only knob may switch it off.
+    /// The analysis harness sets it `false` to measure the rule-off baseline.
+    no_crossing: bool,
     #[allow(dead_code)]
     rng: ChaCha8Rng,
 }
@@ -146,6 +156,7 @@ impl GameState {
             eliminated: [false; STEWARD_COUNT],
             history: Vec::new(),
             pending: [None, None, None, None],
+            no_crossing: true,
             rng: ChaCha8Rng::from_seed(seed),
         }
     }
@@ -176,6 +187,18 @@ impl GameState {
         Steward::from_slot(self.current)
     }
 
+    /// Whether the no-crossing rule (§4.11) is being enforced.
+    pub fn no_crossing_rule(&self) -> bool {
+        self.no_crossing
+    }
+
+    /// Enable/disable the no-crossing rule. Browser builds keep it fixed-on; this
+    /// exists for the native-only knob and the analysis harness (rule-off
+    /// baseline). Does not affect the board hash or determinism.
+    pub fn set_no_crossing_rule(&mut self, enabled: bool) {
+        self.no_crossing = enabled;
+    }
+
     /// Whether any steward has a smouldering crater awaiting rebuild.
     pub fn has_pending_dispersal(&self) -> bool {
         self.pending.iter().any(Option::is_some)
@@ -193,17 +216,81 @@ impl GameState {
             .map(|cells| cells.iter().map(|&i| self.board.coord(i)).collect())
     }
 
-    /// The game ends when no placement remains and no crater is pending.
+    /// The game ends when the board is saturated with no crater pending, or when
+    /// every steward is forced to pass with empties remaining (a global deadlock —
+    /// see [`is_deadlocked`](Self::is_deadlocked)). The latter cannot occur unless
+    /// the no-crossing rule is active.
     pub fn is_over(&self) -> bool {
-        self.board.empty_count() == 0 && !self.has_pending_dispersal()
+        (self.board.empty_count() == 0 && !self.has_pending_dispersal()) || self.is_deadlocked()
     }
 
-    /// All empty (legal) placement targets, ascending by linear index.
+    /// All empty placement targets, ascending by linear index. This is the raw
+    /// target set; it ignores the colour-dependent no-crossing rule. For the
+    /// moves a specific steward may actually play, use
+    /// [`legal_moves_for`](Self::legal_moves_for) /
+    /// [`current_legal_moves`](Self::current_legal_moves).
     pub fn legal_moves(&self) -> Vec<Coord> {
         (0..self.board.len())
             .filter(|&i| self.board.get(i) == CellState::Empty)
             .map(|i| self.board.coord(i))
             .collect()
+    }
+
+    /// Placement targets `steward` may legally take: empty cells minus any the
+    /// no-crossing rule (§4.11) forbids for that colour. Ascending by index, so
+    /// deterministic. With the rule off this equals [`legal_moves`](Self::legal_moves).
+    pub fn legal_moves_for(&self, steward: Steward) -> Vec<Coord> {
+        let empties = self.legal_moves();
+        if !self.no_crossing {
+            return empties;
+        }
+        empties
+            .into_iter()
+            .filter(|&c| !crate::crossing::is_crossing_illegal(&self.board, c, steward))
+            .collect()
+    }
+
+    /// Legal placements for the steward whose turn it is.
+    pub fn current_legal_moves(&self) -> Vec<Coord> {
+        self.legal_moves_for(self.current_steward())
+    }
+
+    /// Whether the steward to move has no legal placement and must therefore pass
+    /// (forced pass — there is no voluntary pass). Only true while empties remain
+    /// and the game is not already over.
+    pub fn must_pass(&self) -> bool {
+        !self.is_over() && self.board.empty_count() > 0 && self.current_legal_moves().is_empty()
+    }
+
+    /// Global deadlock: empties remain but **no** non-eliminated steward has any
+    /// legal placement (every empty cell is cross-blocked for every colour). The
+    /// board can never progress, so the game is treated as terminal. Always
+    /// `false` when empties are exhausted (the saturation endgame handles that) or
+    /// when the no-crossing rule is off (raw empties are always placeable).
+    pub fn is_deadlocked(&self) -> bool {
+        if self.board.empty_count() == 0 || !self.no_crossing {
+            return false;
+        }
+        Steward::ALL
+            .iter()
+            .enumerate()
+            .all(|(slot, &s)| self.eliminated[slot] || self.legal_moves_for(s).is_empty())
+    }
+
+    /// Skip the current steward's turn. Legal **only** as a forced pass — i.e.
+    /// when [`must_pass`](Self::must_pass) holds. Advances to the next steward
+    /// without touching the board (any owed crater stays pending). Returns
+    /// [`MoveError::PassNotAllowed`] if the steward still has a legal move, or
+    /// [`MoveError::GameOver`] if the game is already over.
+    pub fn pass(&mut self) -> Result<(), MoveError> {
+        if self.is_over() {
+            return Err(MoveError::GameOver);
+        }
+        if !self.must_pass() {
+            return Err(MoveError::PassNotAllowed);
+        }
+        self.advance_turn();
+        Ok(())
     }
 
     /// Meshes of `steward` currently in atari (`|M| == ATARI_SIZE`).
@@ -256,6 +343,15 @@ impl GameState {
             let idx = self.board.index(mv.coord).ok_or(MoveError::OutOfBounds)?;
             if self.board.get(idx) != CellState::Empty {
                 return Err(MoveError::Occupied);
+            }
+            // No-crossing rule (§4.11): reject a placement whose same-colour bond
+            // would cross an existing different-colour bond on the shared face.
+            // Checked against the pre-move board (matching the analysis predicate)
+            // before any mutation, so a rejected move leaves state untouched.
+            if self.no_crossing
+                && crate::crossing::is_crossing_illegal(&self.board, mv.coord, steward)
+            {
+                return Err(MoveError::CrossesBond);
             }
             Some(idx)
         } else {

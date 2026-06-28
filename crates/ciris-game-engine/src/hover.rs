@@ -41,8 +41,20 @@ pub(crate) struct HoverState {
 #[derive(Component)]
 struct HoverLight;
 
+/// Live-tunable multiplier on the selection/position cue strength (the glint that
+/// flares on every surface the cursor reaches). Driven by the "Select glow" knob.
+#[derive(Resource)]
+pub(crate) struct SelectGlow(pub f32);
+
+impl Default for SelectGlow {
+    fn default() -> Self {
+        SelectGlow(1.0)
+    }
+}
+
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<HoverState>()
+        .init_resource::<SelectGlow>()
         .add_systems(Startup, spawn_hover_light)
         .add_systems(Update, update_hover);
 }
@@ -73,6 +85,7 @@ fn update_hover(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<crate::render::MainCam>>,
     orb_handles: Option<Res<OrbHandles>>,
+    select_glow: Res<SelectGlow>,
     mut orbs: ResMut<Assets<OrbMaterial>>,
     mut state: ResMut<HoverState>,
     mut light: Query<(&mut PointLight, &mut Transform), With<HoverLight>>,
@@ -80,14 +93,14 @@ fn update_hover(
     let n = board.0.board.n;
 
     // Resolve the cursor → world ray and the frontmost cell it passes through.
-    let target: Option<Vec3> = (|| {
+    let picked: Option<(usize, Vec3)> = (|| {
         let window = windows.single().ok()?;
         let cursor = window.cursor_position()?;
         let (camera, cam_tf) = cameras.single().ok()?;
         let ray = camera.viewport_to_world(cam_tf, cursor).ok()?;
         let dir = ray.direction.as_vec3();
 
-        let mut best: Option<(f32, Vec3)> = None; // (t along ray, cell center)
+        let mut best: Option<(f32, usize, Vec3)> = None; // (t along ray, idx, center)
         for idx in 0..board.0.board.len() {
             let center = cell_world_pos(board.0.board.coord(idx), n);
             let t = (center - ray.origin).dot(dir);
@@ -95,12 +108,20 @@ fn update_hover(
                 continue;
             }
             let perp = (ray.origin + dir * t).distance(center);
-            if perp < PICK_RADIUS && best.is_none_or(|(bt, _)| t < bt) {
-                best = Some((t, center));
+            if perp < PICK_RADIUS && best.is_none_or(|(bt, _, _)| t < bt) {
+                best = Some((t, idx, center));
             }
         }
-        best.map(|(_, c)| c)
+        best.map(|(_, idx, c)| (idx, c))
     })();
+
+    // Limit the cue to VALID moves: only engage when the picked cell is a legal
+    // placement for the steward to move (empty + not forbidden by the no-crossing
+    // rule). Hovering an occupied / dead / cross-blocked cell shows no cue.
+    let target: Option<Vec3> = picked.and_then(|(idx, c)| {
+        let coord = board.0.board.coord(idx);
+        board.0.current_legal_moves().contains(&coord).then_some(c)
+    });
 
     // Exponential smoothing toward the target (or toward "off" when none).
     let k = (1.0 - (-time.delta_secs() / TAU).exp()).clamp(0.0, 1.0);
@@ -115,7 +136,7 @@ fn update_hover(
     // Drive every orb material's selection uniform (xyz = focus, w = strength)
     // so the sphere nearest the cursor swirls with light.
     if let Some(handles) = orb_handles {
-        let hover = state.pos.extend(state.strength);
+        let hover = state.pos.extend(state.strength * select_glow.0);
         for h in &handles.0 {
             if let Some(mut mat) = orbs.get_mut(h) {
                 mat.hover = hover;

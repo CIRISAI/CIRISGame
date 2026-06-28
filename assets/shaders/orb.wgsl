@@ -17,8 +17,10 @@
 @group(3) @binding(1) var<uniform> params: vec4<f32>;
 // xyz = cursor focus point (world); w = selection strength [0,1].
 @group(3) @binding(2) var<uniform> hover: vec4<f32>;
-// x = gas saturation (live-tuned); yzw spare.
+// x = gas saturation (live-tuned); y = prism amount; zw spare.
 @group(3) @binding(3) var<uniform> params2: vec4<f32>;
+// x = IOR; y = refraction strength; z = cube half-size; w = edge glow gain.
+@group(3) @binding(4) var<uniform> glass: vec4<f32>;
 
 fn hash13(p3: vec3<f32>) -> f32 {
     var p = fract(p3 * 0.1031);
@@ -57,6 +59,23 @@ fn gas(p: vec3<f32>, t: f32, ph: f32) -> f32 {
     return vnoise(q + ph);
 }
 
+// The surrounding world — sampled procedurally along a ray DIRECTION, NEVER the
+// scene, so other stones / tubes / markers never show through the glass. It's a
+// deep-space starfield (we float in space): mostly black with sparse bright
+// stars, so the glass refracts/reflects stars around its clear edge. Pure math,
+// no texture, WebGL2-safe. `gain` scales star brightness (the "Reflect" knob).
+fn star_env(d: vec3<f32>, gain: f32) -> vec3<f32> {
+    // Starfield removed — the glass refracts/reflects the up/down POLE NEBULAE
+    // instead, so the clear edge picks up the orientation colours (cool zenith,
+    // warm nadir) against black rather than reading flat black.
+    let nd = normalize(d);
+    let up = smoothstep(0.35, 1.0, nd.y);
+    let down = smoothstep(0.35, 1.0, -nd.y);
+    let cool = vec3<f32>(0.12, 0.28, 0.85);
+    let warm = vec3<f32>(0.95, 0.42, 0.16);
+    return (cool * up + warm * down) * gain;
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let speed = params.x;
@@ -81,21 +100,45 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let sel = hover.w * exp(-distance(in.world_position.xyz, hover.xyz) * 1.6);
 
     if (color.a >= 0.999) {
-        // OPAQUE LIVE CORE → push SATURATION (not brightness) so the muted
-        // steward pigment reads as neon without blooming to white.
+        // CLEAR-GLASS MARBLE / TUBE WITH GAS INSIDE — opaque, so other stones /
+        // tubes / markers never show through it. What you DO see "through" the
+        // glass is the starfield only (star_env, pure math), refracted/reflected,
+        // plus the steward's own swirling neon gas. Push SATURATION (not
+        // brightness) so the muted pigment reads neon without blooming white.
         let lum = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
         let sat = max(vec3<f32>(0.0), vec3<f32>(lum) + (color.rgb - vec3<f32>(lum)) * params2.x);
-        let neon = sat * (neon_glow * (0.85 + 0.8 * wisp));
+        let gas_light = sat * (neon_glow * (0.6 + 0.9 * wisp));
 
-        // EXPERIMENTAL: X-cube dichroic beamsplitter — prismatic R/G/B by surface
-        // axis, but ONLY on the reflective fresnel rim (the glass/reflection),
-        // never the gas body, so it doesn't wash the core to white. params2.y =
-        // amount.
-        let rim_f = pow(1.0 - clamp(dot(nrm, view_dir), 0.0, 1.0), 3.0);
-        let prism_rim = (nrm * nrm) * (neon_glow * 2.0 * rim_f * params2.y);
+        let ior = glass.x;
+        let edge = glass.w;
+        let incident = -view_dir; // eye → surface
+        let refl_dir = reflect(incident, nrm);
+        let star_refl = star_env(refl_dir, edge);
 
-        let sel_add = sat * (sel * (2.0 + 2.0 * wisp));
-        return vec4<f32>(neon + prism_rim + sel_add, 1.0);
+        // `facing` is the radial coordinate of the surface: 1 dead-centre, 0 at
+        // the silhouette. Glass is "thicker" at grazing angles → reflects more.
+        let facing = clamp(dot(nrm, view_dir), 0.0, 1.0);
+        let fres = pow(1.0 - facing, 3.0);
+
+        // SELECTION / POSITION CUE: a strong bright glint that flares wherever the
+        // cursor's emitted light reaches — "you are selecting here, it touches
+        // these". Same formula on every surface type so it reads consistently,
+        // brightest at the grazing rim where glass catches light.
+        let sel_glint = mix(sat, vec3<f32>(1.0), 0.6) * (sel * (3.0 + 5.0 * fres));
+
+        // X-cube dichroic prism rides the grazing rim when Prism is up.
+        let prismatic = (nrm * nrm) * (neon_glow * 1.6 * fres * params2.y);
+
+        // Spheres AND tubes render identically — the same gorgeous clear-glass
+        // look: a clear glass edge that refracts + reflects the starfield (never
+        // other game objects), wrapping a central neon gas core sized by glass.y.
+        let refr_dir = refract(incident, nrm, 1.0 / ior);
+        let star_refr = star_env(refr_dir, edge);
+        let glass_view = mix(star_refr, star_refl, fres);
+        let t_lo = clamp(1.0 - glass.y, 0.0, 0.95);
+        let core_mask = smoothstep(t_lo, min(t_lo + 0.4, 0.98), facing);
+        let gas_core = gas_light * core_mask;
+        return vec4<f32>(glass_view + gas_core + prismatic + sel_glint, 1.0);
     }
 
     // TRANSLUCENT EMPTY-POSITION MARKER → tiny clear grey glass: a faint body, a
@@ -104,10 +147,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let body = color.rgb * (neon_glow * (0.4 + 1.1 * wisp));
     let clear = vec3<f32>(0.85, 0.92, 1.0) * (haze * 0.4);
     let rim = mix(color.rgb, vec3<f32>(1.0), 0.4) * (rim_gain * fres);
-    let sel_light = mix(color.rgb, vec3<f32>(1.0), 0.4) * (sel * (1.5 + 3.0 * wisp));
-    let col = body + clear + rim + sel_light;
+    // SELECTION / POSITION CUE — same strong glint as the marbles/tubes, so the
+    // cursor's reach reads consistently across every surface type.
+    let sel_glint = mix(color.rgb, vec3<f32>(1.0), 0.6) * (sel * (3.0 + 5.0 * fres));
+    let col = body + clear + rim + sel_glint;
     let alpha = clamp(
-        color.a * 0.3 + wisp * 0.4 + haze * 0.15 + fres * 0.7 + sel * 0.4,
+        color.a * 0.3 + wisp * 0.4 + haze * 0.15 + fres * 0.7 + sel * 0.8,
         0.0,
         1.0,
     );

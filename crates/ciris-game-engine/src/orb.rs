@@ -58,9 +58,16 @@ pub struct OrbMaterial {
     /// sphere nearest the focus swirls brighter with light. `w = 0` is resting.
     #[uniform(2)]
     pub hover: Vec4,
-    /// Live tuning: `x` = gas saturation, `y` spare, `z` spare, `w` spare.
+    /// Live tuning: `x` = gas saturation, `y` = prism amount, `z` spare, `w` spare.
     #[uniform(3)]
     pub params2: Vec4,
+    /// Clear-glass marble look: `x` = IOR, `y` = gas-core size (0 = none ‥ ~1.5 =
+    /// fills, leaving no clear edge), `z` = shape (0 = sphere: view-facing gas
+    /// core + clear edge; 1 = tube: gas fills the whole tube so it never vanishes
+    /// at grazing angles and stays continuous with the sphere gas), `w` = star
+    /// (edge reflection) gain.
+    #[uniform(4)]
+    pub glass: Vec4,
 }
 
 /// Default gas saturation (how far the muted pigment is pushed from grey).
@@ -90,7 +97,17 @@ pub(crate) fn material(steward: Steward) -> OrbMaterial {
         params: Vec4::new(SWIRL_SPEED, SWIRL_SCALE, NEON_GLOW, RIM_GAIN),
         hover: Vec4::ZERO,
         params2: Vec4::new(DEFAULT_SAT, 0.0, 0.0, 0.0),
+        glass: Vec4::new(1.45, 0.45, 0.0, 1.0), // z = 0 → sphere
     }
+}
+
+/// A connecting tube of the steward's gas — same look as the marble, but the gas
+/// fills the whole tube (shape flag `glass.z = 1`) so it never vanishes at
+/// grazing angles and stays continuous with the spheres it joins.
+pub(crate) fn tube_material(steward: Steward) -> OrbMaterial {
+    let mut m = material(steward);
+    m.glass.z = 1.0;
+    m
 }
 
 /// A tiny clear, slightly-grey glass sphere marking an empty lattice position.
@@ -100,6 +117,7 @@ pub(crate) fn empty_material() -> OrbMaterial {
         params: Vec4::new(SWIRL_SPEED, SWIRL_SCALE, EMPTY_GLOW, EMPTY_RIM),
         hover: Vec4::ZERO,
         params2: Vec4::new(1.0, 0.0, 0.0, 0.0),
+        glass: Vec4::new(1.45, 0.45, 0.0, 1.0),
     }
 }
 

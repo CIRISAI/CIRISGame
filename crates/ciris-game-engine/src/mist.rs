@@ -193,6 +193,9 @@ pub(crate) fn setup_mist(
 
 /// Advance every cell's mist phase and rewrite its material uniforms each frame
 /// (DESIGN_BRIEF §3.6 flow + §4.6 cross-fade). Reads no game state.
+/// Currently retired (see `render.rs`) — kept for a future space-appropriate
+/// dead-cell effect.
+#[allow(dead_code)]
 pub(crate) fn animate_mist(
     time: Res<Time>,
     mut state: ResMut<MistState>,

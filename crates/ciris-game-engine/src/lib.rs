@@ -39,8 +39,8 @@ mod capture;
 #[cfg(feature = "render")]
 mod endgame;
 
-#[cfg(feature = "render")]
-mod environment;
+// `environment` (the old warm horizon dome) is retired — replaced by the
+// deep-space starfield enclosure in `cube`. File kept for reference, not compiled.
 
 #[cfg(feature = "render")]
 mod fonts;
@@ -83,6 +83,9 @@ mod render;
 
 #[cfg(feature = "render")]
 mod screensaver;
+
+#[cfg(feature = "render")]
+mod signets;
 
 #[cfg(feature = "render")]
 mod state;

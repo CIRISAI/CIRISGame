@@ -7,6 +7,8 @@ use ciris_game_engine_core::{
     algorithm_a, dispersal_counts, validate_layout, Board, CellState, Coord, GameState, Move,
     MoveError, Steward, COLLAPSE_THRESHOLD,
 };
+use rand_chacha::ChaCha8Rng;
+use rand_core::{RngCore, SeedableRng};
 
 /// Grow a connected component of `count` cells from `start`, always extending by
 /// the smallest-index unused face-neighbor (deterministic). Returned in an order
@@ -244,6 +246,230 @@ fn rebuild_rejects_below_floor_and_leaves_state_intact() {
     assert_eq!(gs.scores[0], 0, "no score on a rejected move");
     for &idx in &seven {
         assert_eq!(gs.board.get(idx), CellState::TempDead(Steward::Sienna));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// No-crossing rule (§4.11) + forced pass
+// ---------------------------------------------------------------------------
+
+/// Build the canonical crossing geometry on the `k = 0` unit square at the
+/// origin: a live Lapis bond on one diagonal `(1,0,0)–(0,1,0)`, plus a Sienna
+/// stone at `(1,1,0)` so that placing Sienna at `(0,0,0)` would form the *other*
+/// diagonal and cross it. Returns a game with the rest of the board left empty.
+fn crossing_setup(seed: u8) -> GameState {
+    let mut gs = GameState::new(5, [seed; 32]);
+    let set = |gs: &mut GameState, c: Coord, s: CellState| {
+        let idx = gs.board.index(c).unwrap();
+        gs.board.set(idx, s);
+    };
+    set(
+        &mut gs,
+        Coord::new(1, 0, 0),
+        CellState::Live(Steward::Lapis),
+    );
+    set(
+        &mut gs,
+        Coord::new(0, 1, 0),
+        CellState::Live(Steward::Lapis),
+    );
+    set(
+        &mut gs,
+        Coord::new(1, 1, 0),
+        CellState::Live(Steward::Sienna),
+    );
+    gs
+}
+
+#[test]
+fn crossing_placement_is_rejected() {
+    // §4.11: Sienna at (0,0,0) would bond to (1,1,0), crossing the live Lapis
+    // bond (1,0,0)–(0,1,0). Current steward is slot 0 = Sienna.
+    let mut gs = crossing_setup(11);
+    assert_eq!(gs.current_steward(), Steward::Sienna);
+
+    let origin = Coord::new(0, 0, 0);
+    let err = gs.apply_move(Move::place(origin)).unwrap_err();
+    assert_eq!(err, MoveError::CrossesBond);
+    // Rejected before mutation: the target stays empty, no score moved.
+    assert_eq!(
+        gs.board.get(gs.board.index(origin).unwrap()),
+        CellState::Empty
+    );
+    assert_eq!(gs.scores, [0, 0, 0, 0]);
+    // The cell is filtered out of the colour-aware legal set, but raw targets
+    // still list it (the rule is colour-dependent, not a board fact).
+    assert!(!gs.current_legal_moves().contains(&origin));
+    assert!(gs.legal_moves().contains(&origin));
+}
+
+#[test]
+fn crossing_rule_is_colour_dependent() {
+    // The SAME spot that is illegal for Sienna is legal for a colour whose bond
+    // would lie on a different diagonal. Lapis at (0,0,0) forms no same-colour
+    // bond there (its Lapis neighbours (1,0,0)/(0,1,0) are not face-adjacent to
+    // the origin), so the no-crossing rule does not forbid it.
+    let mut gs = crossing_setup(12);
+    gs.current = 1; // Lapis to move
+    let origin = Coord::new(0, 0, 0);
+    assert!(gs.current_legal_moves().contains(&origin));
+    gs.apply_move(Move::place(origin)).unwrap();
+    assert_eq!(
+        gs.board.get(gs.board.index(origin).unwrap()),
+        CellState::Live(Steward::Lapis)
+    );
+}
+
+#[test]
+fn non_crossing_placement_at_same_spot_is_allowed() {
+    // Same Sienna placement at (0,0,0) with the bonding neighbour present but
+    // WITHOUT the opposing Lapis bond is perfectly legal — it is the crossing,
+    // not the bond, that the rule forbids.
+    let mut gs = GameState::new(5, [13u8; 32]);
+    let idx = gs.board.index(Coord::new(1, 1, 0)).unwrap();
+    gs.board.set(idx, CellState::Live(Steward::Sienna));
+    let origin = Coord::new(0, 0, 0);
+    assert!(gs.current_legal_moves().contains(&origin));
+    gs.apply_move(Move::place(origin)).unwrap();
+    assert_eq!(
+        gs.board.get(gs.board.index(origin).unwrap()),
+        CellState::Live(Steward::Sienna)
+    );
+}
+
+#[test]
+fn steward_with_no_legal_move_passes_and_turn_advances() {
+    // One empty cell, cross-blocked for the steward to move (Sienna) but open to
+    // the others — a forced colour-local pass, not a global deadlock.
+    let mut gs = GameState::new(5, [14u8; 32]);
+    for i in 0..gs.board.len() {
+        gs.board.set(i, CellState::PermaDead);
+    }
+    let origin = Coord::new(0, 0, 0);
+    let set = |gs: &mut GameState, c: Coord, s: CellState| {
+        let idx = gs.board.index(c).unwrap();
+        gs.board.set(idx, s);
+    };
+    set(&mut gs, origin, CellState::Empty);
+    set(
+        &mut gs,
+        Coord::new(1, 0, 0),
+        CellState::Live(Steward::Lapis),
+    );
+    set(
+        &mut gs,
+        Coord::new(0, 1, 0),
+        CellState::Live(Steward::Lapis),
+    );
+    set(
+        &mut gs,
+        Coord::new(1, 1, 0),
+        CellState::Live(Steward::Sienna),
+    );
+
+    assert_eq!(gs.current_steward(), Steward::Sienna);
+    assert!(
+        gs.current_legal_moves().is_empty(),
+        "Sienna is cross-blocked"
+    );
+    assert!(gs.must_pass());
+    assert!(!gs.is_over(), "Lapis can still play the empty cell");
+
+    // A steward with a legal move may not pass.
+    let mut other = GameState::new(5, [14u8; 32]);
+    other
+        .board
+        .set(other.board.index(origin).unwrap(), CellState::Empty);
+    assert_eq!(other.pass().unwrap_err(), MoveError::PassNotAllowed);
+
+    gs.pass().unwrap();
+    assert_eq!(gs.current, 1, "turn advanced to the next steward (Lapis)");
+    assert!(
+        gs.current_legal_moves().contains(&origin),
+        "Lapis can play it"
+    );
+    gs.apply_move(Move::place(origin)).unwrap();
+}
+
+#[test]
+fn all_pass_deadlock_terminates_the_game() {
+    // Only Sienna is in the rotation; its sole empty cell is cross-blocked, so no
+    // progress is possible. The game must report over rather than loop forever.
+    let mut gs = GameState::new(5, [15u8; 32]);
+    gs.eliminated = [false, true, true, true];
+    for i in 0..gs.board.len() {
+        gs.board.set(i, CellState::PermaDead);
+    }
+    let origin = Coord::new(0, 0, 0);
+    let set = |gs: &mut GameState, c: Coord, s: CellState| {
+        let idx = gs.board.index(c).unwrap();
+        gs.board.set(idx, s);
+    };
+    set(&mut gs, origin, CellState::Empty);
+    set(
+        &mut gs,
+        Coord::new(1, 0, 0),
+        CellState::Live(Steward::Lapis),
+    );
+    set(
+        &mut gs,
+        Coord::new(0, 1, 0),
+        CellState::Live(Steward::Lapis),
+    );
+    set(
+        &mut gs,
+        Coord::new(1, 1, 0),
+        CellState::Live(Steward::Sienna),
+    );
+
+    assert!(gs.current_legal_moves().is_empty());
+    assert!(gs.is_deadlocked(), "no steward can place anywhere");
+    assert!(gs.is_over(), "deadlock is terminal");
+    assert_eq!(
+        gs.apply_move(Move::place(origin)).unwrap_err(),
+        MoveError::GameOver
+    );
+    assert_eq!(gs.pass().unwrap_err(), MoveError::GameOver);
+}
+
+/// Drive a full rule-on game to completion with a fixed RNG policy: place a
+/// random legal cell, forced-pass when blocked, auto-disperse, and flush owed
+/// craters at saturation. Returns the final outcome.
+fn play_full_rule_on(seed: [u8; 32]) -> ciris_game_engine_core::Outcome {
+    let mut gs = GameState::new(5, seed);
+    let mut rng = ChaCha8Rng::from_seed(seed);
+    let mut guard = 0u32;
+    while !gs.is_over() {
+        guard += 1;
+        assert!(guard < 1_000_000, "runaway game loop");
+        if gs.must_pass() {
+            gs.pass().unwrap();
+            continue;
+        }
+        if gs.board.empty_count() == 0 {
+            // Endgame: a crater is still owed; resolve it (no placement).
+            let _ = gs.apply_move(Move::place(Coord::new(0, 0, 0)));
+            continue;
+        }
+        let legal = gs.current_legal_moves();
+        let pick = legal[(rng.next_u32() as usize) % legal.len()];
+        gs.apply_move(Move::place(pick)).unwrap();
+    }
+    gs.outcome()
+}
+
+#[test]
+fn same_seed_yields_identical_game() {
+    // Determinism: the rule-on engine plus a deterministic policy replays
+    // bit-identically (board hash + total) for the same seed, and different seeds
+    // generally diverge.
+    for s in 0..16u8 {
+        let seed = [s; 32];
+        let a = play_full_rule_on(seed);
+        let b = play_full_rule_on(seed);
+        assert_eq!(a.board_state_hash, b.board_state_hash, "seed {s}: hash");
+        assert_eq!(a.total, b.total, "seed {s}: total");
+        assert_eq!(a.all_survivors, b.all_survivors, "seed {s}: survivors");
     }
 }
 

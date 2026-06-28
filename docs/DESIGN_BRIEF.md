@@ -103,32 +103,33 @@ The lattice is the **rhombic-dodecahedral honeycomb** with simple-cubic world-co
 
 Board AABB scales linearly: span = N world units. Default **N = 5** (125 cells). Alternates 3, 4, 6, 7. N = 7 is native-only (mobile browsers may struggle).
 
-### 3.2 Glass shell — `StandardMaterial`
+### 3.2 Glass marble — `OrbMaterial` (custom shader)
 
-```rust
-StandardMaterial {
-    specular_transmission: 1.0,
-    ior: 1.50,
-    thickness: 0.18,
-    perceptual_roughness: 0.04,
-    attenuation_color: Color::rgb_linear(0.92, 0.94, 0.93),  // borosilicate green
-    attenuation_distance: 2.2,
-    reflectance: 0.5,
-    ..Default::default()
-}
+Each live cell is **one opaque clear-glass marble**: a neon swirling-gas core (§3.3) at the centre, wrapped by a thick clear-glass edge. The glass **refracts and reflects only the surrounding starfield (§3.8) — never other game objects.** A marble never shows the rest of the board's jumble through it; to see what is behind a marble you rotate or re-orient the camera (§4.8), not look through the glass. This is a deliberate departure from screen-space transmission of the live scene: the environment map is fixed to the enclosure, so each marble reads as a self-contained gas-in-glass orb rather than a lens onto the board.
+
+Implemented as a custom fragment material (`orb.wgsl` / `OrbMaterial`), not screen-space `specular_transmission` (which would lens the live scene through the glass). The shader composites, opaque, in one surface:
+
+```text
+gas core (centre, §3.3)
+  + clear glass edge that REFRACTS + REFLECTS the starfield env only (§3.8)
+  + fresnel rim catch  pow(1 - dot(N,V), 3) — a visionOS-style edge outline
+  + optional X-cube dichroic prism on that rim (knob spheres.prism)
+knobs: glass.ior, glass.reflect, spheres.core_size, spheres.gas_luma/gas_sat
 ```
 
-Custom rim term via `ExtendedMaterial<StandardMaterial, RimMaterial>`: a small wgsl fragment adds `pow(1.0 - dot(N, V), 4.5) * 0.35` to emissive. Head-on reads as a clean lens; oblique reads as a visionOS edge-catch outline.
+Head-on reads as a clean lens onto the gas core; oblique reads as a bright glass edge against the stars. The **optional X-cube dichroic prism** rides the fresnel rim, splitting the rim catch into spectral colour at grazing angles (knob `spheres.prism`).
 
-### 3.3 Inner core — `StandardMaterial` on bloom layer 1
+### 3.3 Gas core — `StandardMaterial` on bloom layer 1
 
-Core sphere of radius 0.25 at each cell carrying the steward's color. `base_color = steward.hex`, `emissive = steward.hex × emissive_intensity` (default 0.6, range [0.4, 1.8]). `RenderLayers::from_layers(&[0, 1])` so the core receives PBR shading on Camera A *and* glows on Camera B.
+At the centre of each marble, a **neon swirling-gas core** carries the steward's color. `base_color = steward.hex`, `emissive = steward.hex × emissive_intensity` (default 0.6, range [0.4, 1.8]). `RenderLayers::from_layers(&[0, 1])` so the core receives PBR shading on Camera A *and* glows on Camera B. The core radius is **tunable** (knob `spheres.core_size`) as a fraction of the marble: a small core reads as a bright nucleus deep in clear glass; a large core fills most of the marble with gas. Gas luminance and saturation are likewise tunable (`spheres.gas_luma`, `spheres.gas_sat`).
 
-The core's surface samples a Gray-Scott reaction-diffusion texture (one shared texture per mesh, 96×96 R8G8) via an extended material. The R-D pattern is the "automata thang" inside the glass — see §4.2.
+The gas's motion is a Gray-Scott reaction-diffusion texture (one shared texture per mesh, 96×96 R8G8) sampled via an extended material. The R-D pattern is the "automata thang" swirling inside the glass — see §4.2.
 
-### 3.4 Pipes
+### 3.4 Tubes
 
-Bevy `Capsule3d` mesh between face-adjacent same-color cells, length 0.574, radius 0.055. Same `StandardMaterial` as the glass shell but with `attenuation_color` biased 25 % toward the steward color. Pipes sit in the channel between shells; up to 12 pipes per node, spreading naturally along surface normals.
+A bond between two face-adjacent same-color cells renders as a **single straight tube** — a Bevy `Capsule3d`, length 0.574, radius 0.055 (knob `layout.tube_width`) — running directly between the two marble centres. The tube uses the **same glass-marble material as the spheres (§3.2)**: the neon gas (§3.3) fills the *whole* tube, so the bond never vanishes at grazing angles and stays visually continuous with the gas in the two spheres it joins. Tubes sit in the channel between shells; up to 12 per node, spreading naturally along surface normals.
+
+Tubes always run **straight**. The no-crossing rule (§4.11) guarantees two different-color bonds never share a face diagonal, so there is never a crossing to dodge — no bowed or two-segment routing is needed.
 
 ### 3.5 Ghost cells (empty lattice)
 
@@ -144,9 +145,13 @@ Bevy `Capsule3d` mesh between face-adjacent same-color cells, length 0.574, radi
 
 A bloom-layer-1 halo sphere of radius 0.55 over the just-placed cell. Opacity tweens `0 → 0.6 → 0` over 800 ms in hot-seat, 1500 ms in screensaver.
 
-### 3.8 Horizon dome
+### 3.8 Starfield enclosure
 
-A 256×256 procedural HDR cubemap generated at boot from the palette: Bone `#FAF9F5` top → Linen `#E8E6DC` middle → Ochre `#D4A27F` below. Fed to the camera's `Skybox` component and sampled by `StandardMaterial` for image-based lighting.
+The play area sits inside a deep-space enclosure — **pure-black space** with white twinkling stars in **two parallax layers** (a near layer and a far layer that shift at different rates as the camera orbits, giving honest depth). A slow whole-field **drift** is available but **default OFF**: the starfield is an orientation reference, and a still field reads as a fixed frame the player navigates against. Capping the vertical axis are two **pole nebulae** — a cool-hue glow over the +Y pole and a warm-hue glow under the −Y pole — with black around the horizon between them, so the up/down axis carries a fixed color signature.
+
+Together with the four steward signets (§3.10) on the horizontal cardinals, the pole nebulae give every one of the six spatial directions a distinct visual anchor — four colored horizons, a cool zenith, a warm nadir — so the player never loses orientation while flying through the lattice (§4.8).
+
+The starfield is also the **only** thing the glass marbles refract and reflect (§3.2) — never other game objects — so the enclosure doubles as the marbles' environment map. (It replaces the earlier warm horizon dome.) Star density and brightness, twinkle rate, drift, nebula strength, and the two pole hues are tunable (`space.*` knobs).
 
 ### 3.9 Agent particles around a node
 
@@ -164,6 +169,12 @@ A 256×256 procedural HDR cubemap generated at boot from the palette: Bone `#FAF
 - A faint Verdigris ring around each cell at 25 % alpha foreshadows the green mist.
 
 End-state animation (§4.7) overrides atari at game end.
+
+### 3.10 Steward signets
+
+Four glowing emblems — one per steward, each in that steward's pigment color — float **outside the play area** at the four horizontal cardinal directions (E / W / N / S), on the seat ring (§4.8). Each signet is a billboarded emblem that always faces the camera. The signet of the steward **whose turn it is** burns ≈ **4× brighter** than the three idle signets (knob `signets.active_boost`), so the active player is legible from any camera pose without reading the HUD.
+
+With the up/down pole nebulae (§3.8) these are the player's orientation anchors: the four colored cardinals plus a cool zenith and a warm nadir mark all six directions in space. Brightness floor, active boost, size, and ring distance are tunable (`signets.bright`, `signets.active_boost`, `signets.size`, `signets.distance`).
 
 ---
 
@@ -206,7 +217,7 @@ Spherical coords `(r, θ, φ)` around the node center; `r = 0.62 · shell_radius
 
 ### 4.4 Camera (N = 5 baseline; distance scales as 1.80 · N)
 
-Default orbit: `(yaw 0.60 rad, pitch 0.35 rad, distance 9.00)`. Mouse-drag smoothing τ = 0.18 s (yaw/pitch), 0.22 s (distance). On placement: 200 ms ease-out-back zoom-in to the placed cell. Screensaver: continuous yaw at 0.05 rad/s + a 0.030-unit breath at 0.030 Hz.
+Default orbit: `(yaw 0.785 rad ≈ 45°, pitch 0.35 rad, distance 9.00)`. The 45° yaw opens the view looking *between* two adjacent steward signets (§3.10); the pitch gives a gentle downward tilt onto the board. Mouse-drag smoothing τ = 0.18 s (yaw/pitch), 0.22 s (distance). On placement: 200 ms ease-out-back zoom-in to the placed cell. Screensaver: continuous yaw at 0.05 rad/s + a 0.030-unit breath at 0.030 Hz.
 
 Camera control via `bevy_panorbit_camera = "0.35"` plus custom systems for the layer-traversal, minimap arcball, and seat-return mechanics in §4.8.
 
@@ -291,6 +302,8 @@ Each player has a fixed **steward seat** outside the board at one of four cardin
 
 **Re-center button.** HUD glyph bottom-right (32 px Bone disc, 1.5 px Clay stroke). Click eases the camera back to the player's seat over 700 ms (ease-out-cubic), simultaneously dismissing the arcball sphere if active. Auto-hides 4 s after camera returns. Keyboard: `Space` in non-hot-seat modes; `Tab` in hot-seat (Esc reserved for drawer).
 
+**Selection glint.** The cursor — or a touch selection — emits a light that glints **consistently and strongly off every surface type**: glass spheres, tubes, and empty-position markers alike. The single coherent glint says *"you are selecting here, and these are the positions this selection touches,"* rather than a per-surface highlight that reads differently on glass than on a marker. Intensity is tunable (`layout.select_glow`).
+
 ### 4.9 Atari timing
 
 Entry (mesh just grew to 6): orbit-speed lerps 400 ms ease-in-out; Kuramoto phase-lock 600 ms; Verdigris foreshadowing ring fades in over 400 ms. Steady state: inhale/exhale 0.6 Hz, ±0.4 emissive; phase locked. Exit: destructive transition supersedes immediately at turn 7, or end-state animation overrides at game end.
@@ -304,6 +317,16 @@ The five cell states are exhaustive: `EMPTY` (ghost lattice, §3.5), `LIVE(stewa
 **No capture — the only death is self-triggered collapse.** CIRISGame has no liberties, no surround-to-kill, no enemy capture of any kind. A cell dies **only** when its *own* steward grows a mesh to seven and triggers the destructive transition (§4.6). A steward can never remove an opponent's cell. Consequence: a `LIVE` cell whose twelve face-neighbors are all occupied by other colors is **inert but safe** — it persists untouched for the rest of the game, contributes `|M| = 1` to temperature, and costs zero perma-dead. Placement is never adjacency-constrained, so a surrounded cell never traps its steward; a steward may place on any `EMPTY` cell anywhere.
 
 The Go analogy in §0 ("holding its breath, the way a Go group with one liberty does") is the **atari *animation* metaphor only** — the held-breath particle pulse at `|M| = 6`. It is not a capture rule. This invariant is load-bearing for M-1 (MISSION §2.2): dispersal models collapse as self-inflicted and generative, never as adversarial annihilation. It is locked under the same "one rule" constraint as the rule of seven.
+
+### 4.11 No-crossing rule and forced pass
+
+A **bond** (the visual "tube", §4.6 pipes) joins two face-adjacent same-color `LIVE` cells. Every face-neighbor displacement on the FCC lattice is a `(±1, ±1, 0)`-type offset, so every bond is the **face-diagonal of a unit square** lying in an axis plane; the two diagonals of one face intersect at its center.
+
+**The rule.** A placement of color `X` at cell `C` is **illegal** if it would create any same-color bond `C–N` (`N` a `LIVE` color-`X` face-neighbor) whose face's *opposite diagonal* `R–S` is **already** a `LIVE` bond of a different color `Y ≠ X` (both `R` and `S` `LIVE` and color `Y`). At most one diagonal per face may carry a live cross-bond — **first-come, first-served**. The rule is **color-dependent**: a cell forbidden to one steward can be legal for another, because the bond each would form is a different diagonal. It introduces the game's first indirect-attack lever (positional denial / "tube-fencing") without touching the no-capture invariant (§4.10) — collapse is still self-only. Quantitative validity, complexity, and playability analysis: [`docs/analysis/NO_CROSSING_RULE.md`](./analysis/NO_CROSSING_RULE.md). The canonical predicate is `ciris_game_engine_core::crossing::is_crossing_illegal`, the single source of truth shared by the engine and the analysis harness.
+
+**Forced pass — and only forced.** A steward **passes if and only if they have no legal placement** (every `EMPTY` cell is occupied/dead or forbidden by the no-crossing rule). There is **no voluntary pass**: a steward with ≥1 legal move must play. A pass advances the turn to the next steward and leaves any owed crater (§4.6) pending. Termination is preserved: empties only ever decrease, so the game still saturates to the board limit; and if a full round of all four stewards passes with empties still on the board (a global cross-deadlock — rare, deep-endgame, ≈0.5–1.4% of games), the game is **over**, scored as it stands.
+
+Like the rule of seven, this rule is **fixed-on in browser** and exposed as a native-only toggle (`noCrossingRule`, §12 knob, default on).
 
 ---
 
@@ -353,7 +376,7 @@ Per slot:
 
 Footer: `Cancel` (Inter 500 Ink, underline on hover) and `OK` (Clay filled, Bone text, 36 px tall, 16 px horizontal padding, 6 px radius). Tab order: `Cancel → Reset → OK`. `OK` applies on next game.
 
-**Advanced panel** (collapsed by default; opens via `?` keystroke, three-finger tap, or the gear glyph) — runtime sliders for every knob in `docs/ITERATION_KNOBS.json`. Writes to `localStorage["cirisgame.knobs"]` JSON and triggers hot-reload.
+**Advanced panel** (collapsed by default; opens via `?` keystroke, three-finger tap, or the gear glyph) — runtime sliders for every knob in `docs/ITERATION_KNOBS.json`. Writes to `localStorage["cirisgame.knobs"]` JSON and triggers hot-reload. Available in both native and browser. The live-tunable visual knobs are grouped into seven families: **Space** (star density, star brightness, twinkle, drift, nebula, up hue, down hue · §3.8), **Spheres** (gas luma, gas sat, prism, core size · §3.3), **Glass** (IOR, thickness, reflect, rough · §3.2), **Layout** (marble size, peer distance, tube width, select glow · §3.1/§3.4/§4.8), **Post** (bloom · §2.3), and **Signets** (bright, active boost, size, distance · §3.10).
 
 ### 5.5 End screen — score table, no epigram
 

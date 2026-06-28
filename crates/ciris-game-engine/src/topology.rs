@@ -15,7 +15,7 @@ use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 
-use crate::effects::{PipeBirth, PipeEnds, PIPE_GROW_SECS, PIPE_LEN};
+use crate::effects::{CoreCell, PipeBirth, PipeEnds, PIPE_GROW_SECS, PIPE_TOTAL_LEN};
 use crate::ui_theme as theme;
 use crate::BoardResource;
 use ciris_game_engine_core::Coord;
@@ -88,6 +88,18 @@ impl Default for TubeWidth {
     }
 }
 
+/// Global scale multiplier for the marbles — shell, core and ring together (the
+/// "marble size" knob). Cores fold it into their breathing scale; everything
+/// else (shell / empty marker / ring) takes it directly.
+#[derive(Resource)]
+pub(crate) struct MarbleSize(pub f32);
+
+impl Default for MarbleSize {
+    fn default() -> Self {
+        MarbleSize(1.0)
+    }
+}
+
 /// Tags a per-cell entity (frame / core / ring) with its board index so the
 /// embedding can place it.
 #[derive(Component)]
@@ -103,6 +115,7 @@ pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<Topology>()
         .init_resource::<PeerDistance>()
         .init_resource::<TubeWidth>()
+        .init_resource::<MarbleSize>()
         .add_systems(Startup, spawn_widget)
         // Position AFTER sync_effects so a freshly-rebuilt pipe is re-fitted to
         // the embedded cell positions the *same* frame — otherwise it flashes at
@@ -141,10 +154,13 @@ fn embed_one(c: Coord, n: u8, s: Shape) -> Vec3 {
         // i → major angle, j → minor angle, k → tube radius (nested tubes). The
         // 0.85 leaves a seam where the lattice doesn't wrap (no false bonds).
         Shape::Torus => {
+            // BOTH angles leave a seam (×0.85) so the first and last layer don't
+            // wrap onto the same spot (which made coincident, overlapping marbles).
+            // Bigger major radius + wider tube spread the cells through the volume.
             let theta = (p.x * 0.5 + 0.5) * TAU * 0.85;
-            let phi = (p.y * 0.5 + 0.5) * TAU;
-            let rr = 0.5 + (p.z * 0.5 + 0.5) * 0.9;
-            let big = 2.2;
+            let phi = (p.y * 0.5 + 0.5) * TAU * 0.85;
+            let rr = 0.8 + (p.z * 0.5 + 0.5) * 1.4;
+            let big = 3.6;
             Vec3::new(
                 (big + rr * phi.cos()) * theta.cos(),
                 rr * phi.sin(),
@@ -164,7 +180,8 @@ fn embed_one(c: Coord, n: u8, s: Shape) -> Vec3 {
             // Width direction lies in the (radial, up) plane, rotating by `half`.
             let across = radial * half.cos() + up * half.sin();
             let normal = radial * (-half.sin()) + up * half.cos();
-            radial * 2.8 + across * (p.y * 2.1) + normal * (p.z * 0.14)
+            // Bigger loop + wider band + more thickness so the layers don't overlap.
+            radial * 4.4 + across * (p.y * 2.8) + normal * (p.z * 0.45)
         }
     }
 }
@@ -220,38 +237,24 @@ fn position_cells(
     board: Res<BoardResource>,
     topo: Res<Topology>,
     peer: Res<PeerDistance>,
-    mut q: Query<(&LatticeCell, &mut Transform)>,
+    marble: Res<MarbleSize>,
+    mut q: Query<(&LatticeCell, Option<&CoreCell>, &mut Transform)>,
 ) {
     let n = board.0.board.n;
-    for (cell, mut tf) in &mut q {
+    for (cell, core, mut tf) in &mut q {
         tf.translation = embed(board.0.board.coord(cell.0), n, &topo) * peer.0;
+        // Cores fold marble size into their own breathing scale (breathe_cores);
+        // shell / empty marker / ring take it directly here.
+        if core.is_none() {
+            tf.scale = Vec3::splat(marble.0);
+        }
     }
 }
 
-/// Re-fit every pipe between its two cells' current embedded positions (so the
-/// tubes stay connected through any morph), carrying the §4.6 grow-in.
-/// Per-bond perpendicular offset so the two face-diagonals (which would otherwise
-/// cross at the face centre) bow to opposite sides and pass clear of each other —
-/// keeping different-colour tubes from crossing. Offset is along the bond's
-/// zero-axis (the face normal); the sign comes from the product of its two
-/// non-zero components, which is opposite for the two diagonals of any face.
-fn crossing_offset(a: Coord, b: Coord) -> Vec3 {
-    const E: f32 = 0.32;
-    let di = b.i as i32 - a.i as i32;
-    let dj = b.j as i32 - a.j as i32;
-    let dk = b.k as i32 - a.k as i32;
-    let s = |x: i32| -> f32 { (x.signum()) as f32 };
-    if dk == 0 {
-        Vec3::Z * (s(di * dj) * E)
-    } else if dj == 0 {
-        Vec3::Y * (s(di * dk) * E)
-    } else if di == 0 {
-        Vec3::X * (s(dj * dk) * E)
-    } else {
-        Vec3::ZERO
-    }
-}
-
+/// Re-fit every straight tube between its two cells' current embedded positions
+/// (so the tubes stay connected through any morph), carrying the §4.6 grow-in.
+/// The no-crossing rule (§4.11) guarantees different-colour bonds never cross, so
+/// tubes run straight through the face centre with no bow.
 fn position_pipes(
     time: Res<Time>,
     board: Res<BoardResource>,
@@ -267,17 +270,14 @@ fn position_pipes(
         let cb = board.0.board.coord(ends.b);
         let ea = embed(ca, n, &topo) * peer.0;
         let eb = embed(cb, n, &topo) * peer.0;
-        // Bow the midpoint perpendicular (crossings → opposite bows); each half
-        // runs from a sphere centre to that bowed midpoint, so the tube curves
-        // out and back into the sphere instead of crossing through the centre.
-        let mid = (ea + eb) * 0.5 + crossing_offset(ca, cb);
-        let (start, end) = if ends.half == 0 { (ea, mid) } else { (mid, eb) };
-        let dir = end - start;
+        let dir = eb - ea;
         let len = dir.length().max(1.0e-4);
         let grow = smooth(((now - birth.0) / PIPE_GROW_SECS).clamp(0.0, 1.0)).max(0.02);
-        tf.translation = (start + end) * 0.5;
+        tf.translation = (ea + eb) * 0.5;
         tf.rotation = Quat::from_rotation_arc(Vec3::Y, dir / len);
-        tf.scale = Vec3::new(tube.0, (len / PIPE_LEN) * grow, tube.0);
+        // Divide by the capsule's TRUE length so the tube spans exactly centre-
+        // to-centre (ends buried inside both spheres) instead of spiking past.
+        tf.scale = Vec3::new(tube.0, (len / PIPE_TOTAL_LEN) * grow, tube.0);
     }
 }
 
