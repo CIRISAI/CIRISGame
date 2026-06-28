@@ -14,11 +14,14 @@
 //! ([`crate::materials`], [`crate::lighting`], [`crate::environment`]); this
 //! file owns geometry sizing, the entity table, and the sync.
 
+use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::RenderLayers;
-use bevy::camera::{Hdr, Viewport};
+use bevy::camera::{Hdr, RenderTarget, Viewport};
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::image::Image;
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 use bevy::window::PrimaryWindow;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
@@ -26,7 +29,7 @@ use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
     attract, cube, effects, endgame, environment, fonts, hover, i18n, intro, lighting, materials,
-    mist, navigation, orb, palette, pipe, plasma, screensaver, state, ui_theme, wizard,
+    mist, navigation, orb, palette, pipe, plasma, screensaver, state, topology, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -80,6 +83,20 @@ struct CellEntities {
 #[derive(Resource)]
 pub struct BoardDirty(pub bool);
 
+/// The main full-window 3D camera. Nav / hover / viewport systems target this one
+/// specifically (a second minimap camera also exists).
+#[derive(Component)]
+pub(crate) struct MainCam;
+
+/// The corner minimap 3D camera — a small, independently-rotatable view of the
+/// same lattice (so you can tilt the selected topology without moving the hero).
+#[derive(Component)]
+struct MinimapCam;
+
+/// Render layer the enclosing cube lives on, so the minimap (lattice only) can
+/// exclude it while the main camera (layers 0,1,CUBE) shows it.
+pub(crate) const CUBE_LAYER: usize = 5;
+
 /// The board's cell states as of the last [`sync_board`] pass. Diffed against the
 /// live board each [`BoardDirty`] to detect the §4.6 collapse / dispersal
 /// transitions that drive the mist and cascade animations.
@@ -120,6 +137,8 @@ pub fn run_app() {
     .add_plugins(orb::plugin)
     // DBS tournament grid-cube enclosure + dark/light mode selector.
     .add_plugins(cube::plugin)
+    // Topology widget: re-embed the play state as cube / sphere / torus / möbius.
+    .add_plugins(topology::plugin)
     // Cursor-attention: hovered cell glows + plasma rushes inward (hover.rs).
     .add_plugins(hover::plugin)
     // Load the §5.1 UI faces so the front-of-house text actually renders.
@@ -162,10 +181,10 @@ pub fn run_app() {
             // Per-frame motion reads the parameters above (one-frame latency
             // on a fresh board is imperceptible at the screensaver cadence).
             effects::breathe_cores,
-            effects::grow_pipes,
             mist::animate_mist,
             // Contain the 3D to the hero rect in Intro/Setup, full in Playing.
             update_camera_viewport,
+            sync_minimap,
             // Hover/press feedback for every front-of-house button.
             ui_theme::button_visuals,
         ),
@@ -187,7 +206,7 @@ pub fn run_app() {
 fn update_camera_viewport(
     screen: Res<State<AppScreen>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut camera: Query<&mut Camera, With<Camera3d>>,
+    mut camera: Query<&mut Camera, With<MainCam>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -226,6 +245,28 @@ fn update_camera_viewport(
     }
 }
 
+/// Mirror the main camera's orientation into the minimap, centred on the board,
+/// so the minimap always shows the *current* orientation. It does not spin on its
+/// own; dragging passes through to the panorbit orbit, so dragging the minimap (or
+/// the scene) rotates the board and the minimap reflects it.
+fn sync_minimap(
+    main: Query<(&PanOrbitCamera, &GlobalTransform), With<MainCam>>,
+    mut mm: Query<&mut Transform, With<MinimapCam>>,
+) {
+    let Ok((orbit, gt)) = main.single() else {
+        return;
+    };
+    let Ok(mut tf) = mm.single_mut() else {
+        return;
+    };
+    let mut dir = (gt.translation() - orbit.focus).normalize_or_zero();
+    if dir.length_squared() < 1.0e-6 {
+        dir = Vec3::Z;
+    }
+    tf.translation = dir * 9.0;
+    tf.look_at(Vec3::ZERO, Vec3::Y);
+}
+
 /// World-space center of lattice cell `(i, j, k)` for an `n³` board:
 /// `world = coord − (n−1)/2` per axis (DESIGN_BRIEF §3.1). `pub(crate)` so the
 /// effects layer can cache cell centres for orbits and pipes.
@@ -240,6 +281,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mist_materials: ResMut<Assets<mist::MistMaterial>>,
     mut orb_materials: ResMut<Assets<OrbMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     board: Res<BoardResource>,
 ) {
     let n = board.0.board.n;
@@ -275,7 +317,62 @@ fn setup(
             radius: Some(1.8 * n as f32),
             ..default()
         },
+        MainCam,
+        // Lattice (0), bloom cores (1), and the enclosing cube (CUBE_LAYER).
+        RenderLayers::from_layers(&[0, BLOOM_LAYER, CUBE_LAYER]),
     ));
+
+    // Minimap: a small camera that renders the lattice (current topology, no cube)
+    // to an OFFSCREEN image, shown in a UI panel (`spawn_minimap_ui`). Rendering to
+    // its own target — not the window — avoids the multi-camera-to-one-window black
+    // screen; it auto-orbits (`spin_minimap`) so the shape reads from all angles.
+    // HDR + Msaa::Off + Rgba16Float keeps it off the bevy #6754 magenta path.
+    let mm_size = Extent3d {
+        width: 360,
+        height: 360,
+        depth_or_array_layers: 1,
+    };
+    let mut mm_image = Image::new_fill(
+        mm_size,
+        TextureDimension::D2,
+        &[0u8; 8],
+        TextureFormat::Rgba16Float,
+        RenderAssetUsages::default(),
+    );
+    mm_image.texture_descriptor.usage =
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+    let mm_handle = images.add(mm_image);
+    commands.spawn((
+        Camera3d::default(),
+        Camera {
+            order: -1,
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.02, 0.02, 0.05)),
+            ..default()
+        },
+        RenderTarget::Image(mm_handle.clone().into()),
+        Hdr,
+        Msaa::Off,
+        Tonemapping::AgX,
+        Transform::from_xyz(0.0, 3.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+        MinimapCam,
+        RenderLayers::from_layers(&[0, BLOOM_LAYER]),
+    ));
+    // UI panel (bottom-right) showing the minimap render target.
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(16.0),
+            right: Val::Px(16.0),
+            width: Val::Px(200.0),
+            height: Val::Px(200.0),
+            border: UiRect::all(Val::Px(1.5)),
+            ..default()
+        },
+        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.22)),
+        ImageNode::new(mm_handle.clone()),
+        GlobalZIndex(40),
+    ));
+    let _ = mm_handle;
 
     // A separate full-window 2D camera owns the UI so the front-of-house overlays
     // stay full-screen even while the 3D camera above is shrunk to the hero rect
@@ -288,7 +385,7 @@ fn setup(
         Hdr,
         Msaa::Off,
         Camera {
-            order: 1,
+            order: 2,
             clear_color: ClearColorConfig::None,
             ..default()
         },
@@ -347,6 +444,7 @@ fn setup(
                     Mesh3d(assets.dot_mesh.clone()),
                     MeshMaterial3d(assets.empty_orb.clone()),
                     Transform::from_translation(pos),
+                    topology::LatticeCell(idx),
                 ))
                 .id(),
         );
@@ -360,6 +458,7 @@ fn setup(
                     Transform::from_translation(pos),
                     Visibility::Hidden,
                     RenderLayers::from_layers(&[0, BLOOM_LAYER]),
+                    topology::LatticeCell(idx),
                 ))
                 .id(),
         );
@@ -372,6 +471,7 @@ fn setup(
                     MeshMaterial3d(assets.ring_mat.clone()),
                     Transform::from_translation(pos),
                     Visibility::Hidden,
+                    topology::LatticeCell(idx),
                 ))
                 .id(),
         );

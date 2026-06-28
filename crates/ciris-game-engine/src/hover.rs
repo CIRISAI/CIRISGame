@@ -9,7 +9,6 @@
 //! Backend-independent (pure ECS + a uniform write), so it runs identically on
 //! native, WebGPU, and WebGL2.
 
-use bevy::camera::Camera3d;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
@@ -72,7 +71,7 @@ fn update_hover(
     time: Res<Time>,
     board: Res<BoardResource>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<crate::render::MainCam>>,
     orb_handles: Option<Res<OrbHandles>>,
     mut orbs: ResMut<Assets<OrbMaterial>>,
     mut state: ResMut<HoverState>,

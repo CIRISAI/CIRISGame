@@ -91,6 +91,9 @@ mod screensaver;
 mod state;
 
 #[cfg(feature = "render")]
+mod topology;
+
+#[cfg(feature = "render")]
 mod ui_theme;
 
 #[cfg(feature = "render")]

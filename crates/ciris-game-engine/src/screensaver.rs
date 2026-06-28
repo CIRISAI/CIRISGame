@@ -29,6 +29,9 @@ pub struct ScreensaverState {
     holding: bool,
     /// Round counter; seeds each fresh game distinctly.
     round: u64,
+    /// When true the screensaver stops advancing (the tuning panel's population
+    /// knob paints a fixed board to study geometry).
+    pub paused: bool,
 }
 
 impl ScreensaverState {
@@ -38,6 +41,7 @@ impl ScreensaverState {
             hold: Timer::from_seconds(HOLD_SECS, TimerMode::Once),
             holding: false,
             round: 0,
+            paused: false,
         }
     }
 }
@@ -86,6 +90,11 @@ pub fn drive(
     mut dirty: ResMut<BoardDirty>,
 ) {
     let dt = time.delta();
+
+    // Paused by the tuning panel's population knob — hold the painted board.
+    if state.paused {
+        return;
+    }
 
     if state.holding {
         if state.hold.tick(dt).just_finished() {

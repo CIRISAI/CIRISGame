@@ -23,8 +23,9 @@ use ciris_game_engine_core::{CellState, Steward, ATARI_SIZE};
 const PIPE_RADIUS: f32 = 0.14;
 /// Tube length — face-neighbour centres sit √2 ≈ 1.414 apart (§3.1). We span most
 /// of that so the tube drives *into* both spheres (no gap), reading as one joined
-/// ball-and-stick object rather than a strut floating between them.
-const PIPE_LEN: f32 = 0.95;
+/// ball-and-stick object rather than a strut floating between them. `pub(crate)`
+/// so `topology` can rescale the tube to the embedded endpoint distance.
+pub(crate) const PIPE_LEN: f32 = 0.95;
 
 /// Atari breath frequency in Hz (DESIGN_BRIEF §4.9).
 const BREATH_HZ: f32 = 0.6;
@@ -35,8 +36,9 @@ const BREATH_SCALE_AMP: f32 = 0.06;
 /// Core fade-in duration when a cell becomes live, e.g. the §4.6 dispersal
 /// rebuild "cores reappear" beat (also a gentle pop-in for ordinary placements).
 const CORE_BIRTH_SECS: f32 = 0.5;
-/// New-pipe extrude duration along the channel (DESIGN_BRIEF §4.6).
-const PIPE_GROW_SECS: f32 = 0.4;
+/// New-pipe extrude duration along the channel (DESIGN_BRIEF §4.6). `pub(crate)`
+/// so `topology::position_pipes` can carry the grow-in while it re-fits the tube.
+pub(crate) const PIPE_GROW_SECS: f32 = 0.4;
 /// A birth timestamp far enough in the past to read as "fully grown".
 const BORN_LONG_AGO: f32 = -1000.0;
 
@@ -102,11 +104,16 @@ pub(crate) struct EffectState {
 #[derive(Component)]
 pub(crate) struct CoreCell(pub usize);
 
-/// A glass pipe, carrying the time it was spawned so [`grow_pipes`] can extrude
-/// it along its length (DESIGN_BRIEF §4.6). Pipes that existed before the move are
-/// born "long ago" and spawn at full length.
+/// A glass pipe's spawn time, so the grow-in can extrude it (DESIGN_BRIEF §4.6).
+/// Pipes that existed before the move are born "long ago" and spawn full length.
 #[derive(Component)]
-pub(crate) struct PipeBirth(f32);
+pub(crate) struct PipeBirth(pub f32);
+
+/// The two cell indices a pipe joins, so [`crate::topology`] can re-fit it
+/// between their embedded positions every frame (keeping tubes connected through
+/// any topology morph).
+#[derive(Component)]
+pub(crate) struct PipeEnds(pub usize, pub usize);
 
 /// Build the shared effect assets and the atari rings, and seed [`CellAnim`].
 /// Called from `render::setup` once the per-cell entity table exists; `cores` is
@@ -263,6 +270,7 @@ pub(crate) fn sync_effects(
                     MeshMaterial3d(material),
                     transform,
                     PipeBirth(birth),
+                    PipeEnds(idx, nb),
                 ))
                 .id();
             state.pipes.push(pipe);
@@ -291,18 +299,6 @@ pub(crate) fn breathe_cores(
         // first comes live (§4.6 dispersal "cores reappear").
         let birth = smoothstep01((t - e.birth) / CORE_BIRTH_SECS);
         tf.scale = Vec3::splat(s * birth * core_scale.0);
-    }
-}
-
-/// Extrude newly-spawned pipes along their length over [`PIPE_GROW_SECS`]
-/// (DESIGN_BRIEF §4.6). Pipes born "long ago" are already at full length.
-pub(crate) fn grow_pipes(time: Res<Time>, mut pipes: Query<(&PipeBirth, &mut Transform)>) {
-    let t = time.elapsed_secs();
-    for (birth, mut tf) in &mut pipes {
-        let g = smoothstep01((t - birth.0) / PIPE_GROW_SECS).max(0.02);
-        if (tf.scale.y - g).abs() > 1.0e-4 {
-            tf.scale.y = g;
-        }
     }
 }
 

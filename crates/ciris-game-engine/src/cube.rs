@@ -67,7 +67,8 @@ impl Default for Tuning {
             cube_opacity: 0.06,
             gas_luma: 2.2,
             gas_sat: 2.0,
-            core_size: 1.0,
+            // 0.3 is the upper bound — small neon cores read best; go smaller.
+            core_size: 0.3,
         }
     }
 }
@@ -90,7 +91,7 @@ const KNOBS: [(Knob, &str, f32); 6] = [
     (Knob::CubeOpacity, "Cube opacity", 0.06),
     (Knob::GasLuma, "Gas luma", 0.6),
     (Knob::GasSat, "Gas sat", 0.4),
-    (Knob::CoreSize, "Core size", 0.12),
+    (Knob::CoreSize, "Core size", 0.03),
 ];
 
 impl Tuning {
@@ -111,7 +112,7 @@ impl Tuning {
             Knob::CubeOpacity => self.cube_opacity = (self.cube_opacity + d).clamp(0.0, 1.0),
             Knob::GasLuma => self.gas_luma = (self.gas_luma + d).clamp(0.2, 8.0),
             Knob::GasSat => self.gas_sat = (self.gas_sat + d).clamp(1.0, 4.0),
-            Knob::CoreSize => self.core_size = (self.core_size + d).clamp(0.3, 2.5),
+            Knob::CoreSize => self.core_size = (self.core_size + d).clamp(0.05, 0.3),
         }
     }
 }
@@ -168,6 +169,8 @@ fn spawn_cube(
         Mesh3d(meshes.add(Cuboid::new(size, size, size))),
         MeshMaterial3d(handle.clone()),
         Transform::default(),
+        // Own layer so the minimap (lattice only) excludes it.
+        bevy::camera::visibility::RenderLayers::layer(crate::render::CUBE_LAYER),
     ));
     commands.insert_resource(CubeHandle(handle));
 }

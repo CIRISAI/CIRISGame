@@ -90,7 +90,7 @@ fn fly_through(
     buttons: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     mut nav: ResMut<NavState>,
-    mut cam: Query<(&mut PanOrbitCamera, &Transform)>,
+    mut cam: Query<(&mut PanOrbitCamera, &Transform), With<crate::render::MainCam>>,
 ) {
     let dt = time.delta_secs();
     if dt <= 0.0 {
@@ -152,7 +152,7 @@ fn fly_through(
 /// you"); rest at [`NEAR_OUTSIDE`] outside the volume.
 fn update_near_clip(
     board: Res<BoardResource>,
-    mut cam: Query<(&Transform, &mut Projection), With<Camera3d>>,
+    mut cam: Query<(&Transform, &mut Projection), With<crate::render::MainCam>>,
 ) {
     let Ok((transform, mut projection)) = cam.single_mut() else {
         return;
