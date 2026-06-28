@@ -16,9 +16,11 @@ use bevy::shader::ShaderRef;
 
 /// Ethereal plasma tint (linear), `a` = base opacity. Cool Lapis-cyan so the
 /// cage reads as a calm electric haze against the warm void + warm pigment cores.
-const TINT: LinearRgba = LinearRgba::new(0.34, 0.58, 0.84, 0.5);
+const TINT: LinearRgba = LinearRgba::new(0.34, 0.58, 0.84, 0.4);
 /// x = flow speed, y = spatial freq, z = floor brightness, w = glow gain.
-const PARAMS: Vec4 = Vec4::new(0.7, 1.5, 0.22, 1.5);
+/// Gentle + ethereal: slow drift, soft large waves, a soft constant haze with
+/// quiet peaks (so the cage reads as a calm field, not a busy neon web).
+const PARAMS: Vec4 = Vec4::new(0.5, 1.2, 0.28, 1.15);
 
 #[derive(Asset, AsBindGroup, TypePath, Clone)]
 pub struct PlasmaMaterial {
