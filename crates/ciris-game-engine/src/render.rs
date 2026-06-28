@@ -29,7 +29,7 @@ use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
     attract, cube, effects, endgame, environment, fonts, hover, i18n, intro, lighting, materials,
-    mist, navigation, orb, palette, pipe, plasma, screensaver, state, topology, ui_theme, wizard,
+    mist, navigation, orb, palette, plasma, screensaver, state, topology, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -97,6 +97,11 @@ struct MinimapCam;
 /// exclude it while the main camera (layers 0,1,CUBE) shows it.
 pub(crate) const CUBE_LAYER: usize = 5;
 
+/// The live-cell glass shell material handle, so the tuning panel can drive its
+/// IOR / thickness / reflectance / roughness live.
+#[derive(Resource)]
+pub(crate) struct GlassHandle(pub Handle<StandardMaterial>);
+
 /// The board's cell states as of the last [`sync_board`] pass. Diffed against the
 /// live board each [`BoardDirty`] to detect the §4.6 collapse / dispersal
 /// transitions that drive the mist and cascade animations.
@@ -131,8 +136,6 @@ pub fn run_app() {
     // Layer-traversal fly-through layered on top of the panorbit rig (§4.8).
     .add_plugins(navigation::plugin)
     .add_plugins(mist::plugin)
-    // Liquid-pigment pipes: the custom `PipeMaterial` + the camera-driven slosh.
-    .add_plugins(pipe::plugin)
     .add_plugins(plasma::plugin)
     .add_plugins(orb::plugin)
     // DBS tournament grid-cube enclosure + dark/light mode selector.
@@ -309,7 +312,7 @@ fn setup(
         Msaa::Off,
         Tonemapping::AgX,
         Bloom {
-            intensity: 0.28,
+            intensity: 0.18,
             composite_mode: BloomCompositeMode::EnergyConserving,
             ..default()
         },
@@ -426,6 +429,7 @@ fn setup(
     let mut orb_handles = vec![assets.empty_orb.clone()];
     orb_handles.extend(assets.core_orb.iter().cloned());
     commands.insert_resource(orb::OrbHandles(orb_handles));
+    commands.insert_resource(GlassHandle(assets.glass_mat.clone()));
 
     // ── one persistent frame + core + ring entity per cell ──────────────
     let count = board.0.board.len();
@@ -479,7 +483,16 @@ fn setup(
 
     // Tier-B life: pipes, agent motes, atari breath — tags each core entity and
     // seeds the per-cell animation parameters (DESIGN_BRIEF §3.4/§3.9/§4.9).
-    effects::setup_effects(&mut commands, &mut meshes, &mut materials, n, count, &core);
+    effects::setup_effects(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        assets.glass_mat.clone(),
+        assets.core_orb.clone(),
+        n,
+        count,
+        &core,
+    );
 
     // Tier-C drama: one hidden per-cell mist volume + material (DESIGN_BRIEF §3.6).
     mist::setup_mist(&mut commands, &mut meshes, &mut mist_materials, &centers);

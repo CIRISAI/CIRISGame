@@ -26,13 +26,15 @@ pub fn glass() -> StandardMaterial {
         // Clear lens: near-total transmission + long attenuation so it tints
         // almost nothing, and a thick wall + clean roughness so the refraction of
         // the opaque core reads as a marble (you see the glass edge bend it).
-        specular_transmission: 0.97,
-        // Higher IOR → the rim bends the core harder, so the refraction reads.
-        ior: 1.7,
-        thickness: 0.84,
-        perceptual_roughness: 0.02,
+        specular_transmission: 0.95,
+        // Modest IOR + thin walls so the glass does NOT lens the small core out
+        // into a hard ring at the rim; low reflectance + a touch of roughness so
+        // the silhouette is a soft glassy edge, not a sharp HDR-bloomed halo.
+        ior: 1.45,
+        thickness: 0.18,
+        perceptual_roughness: 0.08,
         metallic: 0.0,
-        reflectance: 0.5,
+        reflectance: 0.12,
         attenuation_color: palette::BOROSILICATE_LINEAR,
         attenuation_distance: 12.0,
         ..default()

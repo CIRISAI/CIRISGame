@@ -14,13 +14,17 @@ use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 
+use crate::orb::OrbMaterial;
 use crate::render::{cell_world_pos, BoardDirty, Transitions, SHELL_RADIUS};
-use crate::{materials, pipe, BoardResource};
+use crate::{materials, BoardResource};
 use ciris_game_engine_core::{CellState, Steward, ATARI_SIZE};
 
-/// Fat tube radius (DESIGN_BRIEF §3.4) — a substantial neck of steward gas
-/// joining two connected spheres, not a thin connector.
-const PIPE_RADIUS: f32 = 0.14;
+/// Outer glass-tube radius (DESIGN_BRIEF §3.4) — a substantial glass neck joining
+/// two connected spheres, the *same* glass as the sphere shells.
+const PIPE_RADIUS: f32 = 0.16;
+/// Inner neon-core tube radius — the steward core flowing through the glass neck,
+/// the *same* core material as the spheres.
+const PIPE_CORE_RADIUS: f32 = 0.06;
 /// Tube length — face-neighbour centres sit √2 ≈ 1.414 apart (§3.1). We span most
 /// of that so the tube drives *into* both spheres (no gap), reading as one joined
 /// ball-and-stick object rather than a strut floating between them. `pub(crate)`
@@ -87,7 +91,14 @@ impl Default for CoreScale {
 /// *not* shared — each pipe gets its own [`pipe::PipeMaterial`] in [`sync_effects`].
 #[derive(Resource)]
 pub(crate) struct EffectAssets {
-    pipe_mesh: Handle<Mesh>,
+    /// Outer glass tube (same glass material as the sphere shells).
+    pipe_glass_mesh: Handle<Mesh>,
+    /// Inner neon-core tube.
+    pipe_core_mesh: Handle<Mesh>,
+    /// Shared glass shell material — unifies tube glass with sphere glass.
+    glass_mat: Handle<StandardMaterial>,
+    /// Steward core (orb) material per slot — the neon flowing through the tube.
+    core_orb: [Handle<OrbMaterial>; 4],
 }
 
 /// Dynamic effect entities owned by [`sync_effects`].
@@ -109,25 +120,34 @@ pub(crate) struct CoreCell(pub usize);
 #[derive(Component)]
 pub(crate) struct PipeBirth(pub f32);
 
-/// The two cell indices a pipe joins, so [`crate::topology`] can re-fit it
-/// between their embedded positions every frame (keeping tubes connected through
-/// any topology morph).
+/// One half of a (bent) tube between two cells, so [`crate::topology`] can re-fit
+/// it every frame. The tube bows out at its midpoint to avoid crossings, so it is
+/// drawn as two segments: `half = 0` is cell-`a`→midpoint, `half = 1` is
+/// midpoint→cell-`b`. Both ends sit at the sphere centres; the bow is in the middle.
 #[derive(Component)]
-pub(crate) struct PipeEnds(pub usize, pub usize);
+pub(crate) struct PipeEnds {
+    pub a: usize,
+    pub b: usize,
+    pub half: u8,
+}
 
 /// Build the shared effect assets and the atari rings, and seed [`CellAnim`].
 /// Called from `render::setup` once the per-cell entity table exists; `cores` is
 /// that table's core-entity list (one per cell, in index order) so we can tag
 /// each with [`CoreCell`].
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn setup_effects(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    glass_mat: Handle<StandardMaterial>,
+    core_orb: [Handle<OrbMaterial>; 4],
     n: u8,
     count: usize,
     cores: &[Entity],
 ) {
-    let pipe_mesh = meshes.add(Capsule3d::new(PIPE_RADIUS, PIPE_LEN));
+    let pipe_glass_mesh = meshes.add(Capsule3d::new(PIPE_RADIUS, PIPE_LEN));
+    let pipe_core_mesh = meshes.add(Capsule3d::new(PIPE_CORE_RADIUS, PIPE_LEN));
 
     let ring_mesh = meshes.add(Torus {
         major_radius: SHELL_RADIUS,
@@ -158,7 +178,12 @@ pub(crate) fn setup_effects(
     }
 
     commands.insert_resource(CellAnim(anim));
-    commands.insert_resource(EffectAssets { pipe_mesh });
+    commands.insert_resource(EffectAssets {
+        pipe_glass_mesh,
+        pipe_core_mesh,
+        glass_mat,
+        core_orb,
+    });
     commands.insert_resource(EffectState {
         pipes: Vec::new(),
         atari_rings,
@@ -174,7 +199,6 @@ pub(crate) fn sync_effects(
     board: Res<BoardResource>,
     transitions: Res<Transitions>,
     assets: Res<EffectAssets>,
-    mut pipe_materials: ResMut<Assets<pipe::PipeMaterial>>,
     mut anim: ResMut<CellAnim>,
     mut state: ResMut<EffectState>,
     mut commands: Commands,
@@ -263,17 +287,45 @@ pub(crate) fn sync_effects(
                 rotation: Quat::from_rotation_arc(Vec3::Y, dir),
                 scale: Vec3::new(1.0, start_len, 1.0),
             };
-            let material = pipe_materials.add(pipe::material(steward));
-            let pipe = commands
-                .spawn((
-                    Mesh3d(assets.pipe_mesh.clone()),
-                    MeshMaterial3d(material),
-                    transform,
-                    PipeBirth(birth),
-                    PipeEnds(idx, nb),
-                ))
-                .id();
-            state.pipes.push(pipe);
+            // Unified with the spheres: an outer glass tube (same glass material)
+            // + an inner neon core tube (same steward orb material). Drawn in two
+            // halves so the tube can bow at its midpoint (curving back into each
+            // sphere) and clear crossings — see `topology::position_pipes`.
+            let slot = steward.slot() as usize;
+            for half in 0..2u8 {
+                let glass = commands
+                    .spawn((
+                        Mesh3d(assets.pipe_glass_mesh.clone()),
+                        MeshMaterial3d(assets.glass_mat.clone()),
+                        transform,
+                        PipeBirth(birth),
+                        PipeEnds {
+                            a: idx,
+                            b: nb,
+                            half,
+                        },
+                    ))
+                    .id();
+                let core = commands
+                    .spawn((
+                        Mesh3d(assets.pipe_core_mesh.clone()),
+                        MeshMaterial3d(assets.core_orb[slot].clone()),
+                        transform,
+                        PipeBirth(birth),
+                        PipeEnds {
+                            a: idx,
+                            b: nb,
+                            half,
+                        },
+                        bevy::camera::visibility::RenderLayers::from_layers(&[
+                            0,
+                            crate::render::BLOOM_LAYER,
+                        ]),
+                    ))
+                    .id();
+                state.pipes.push(glass);
+                state.pipes.push(core);
+            }
         }
     }
 }

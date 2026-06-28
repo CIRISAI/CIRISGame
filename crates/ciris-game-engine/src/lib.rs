@@ -76,9 +76,6 @@ mod navigation;
 mod orb;
 
 #[cfg(feature = "render")]
-mod pipe;
-
-#[cfg(feature = "render")]
 mod plasma;
 
 #[cfg(feature = "render")]

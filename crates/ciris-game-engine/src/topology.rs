@@ -68,6 +68,26 @@ const MORPH_SECS: f32 = 1.6;
 /// Half-extent of the cube embedding (matches `render::cell_world_pos`).
 const SCALE: f32 = 2.0;
 
+/// Global spacing multiplier between lattice nodes (the "peer distance" knob).
+#[derive(Resource)]
+pub(crate) struct PeerDistance(pub f32);
+
+impl Default for PeerDistance {
+    fn default() -> Self {
+        PeerDistance(1.0)
+    }
+}
+
+/// Global radius multiplier for the connecting tubes (the "tube width" knob).
+#[derive(Resource)]
+pub(crate) struct TubeWidth(pub f32);
+
+impl Default for TubeWidth {
+    fn default() -> Self {
+        TubeWidth(1.0)
+    }
+}
+
 /// Tags a per-cell entity (frame / core / ring) with its board index so the
 /// embedding can place it.
 #[derive(Component)]
@@ -81,6 +101,8 @@ struct TopoLabel;
 
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<Topology>()
+        .init_resource::<PeerDistance>()
+        .init_resource::<TubeWidth>()
         .add_systems(Startup, spawn_widget)
         // Position AFTER sync_effects so a freshly-rebuilt pipe is re-fitted to
         // the embedded cell positions the *same* frame — otherwise it flashes at
@@ -129,15 +151,20 @@ fn embed_one(c: Coord, n: u8, s: Shape) -> Vec3 {
                 (big + rr * phi.cos()) * theta.sin(),
             )
         }
-        // i → position around the loop with a half-twist; j → width (twisted);
-        // k → slight thickness along the loop.
+        // A proper Möbius band. i runs the full loop (0→2π); the WIDTH axis (j)
+        // rotates by half the loop angle so it flips by the time it returns — the
+        // signature half-twist. The band is wide (j) and very thin (k) so it
+        // reads as a twisting ribbon, not a bar.
         Shape::Mobius => {
-            let l = (p.x * 0.5 + 0.5) * TAU * 0.95;
+            let f = p.x * 0.5 + 0.5; // 0..1 around the loop
+            let l = f * TAU;
             let half = l * 0.5;
             let radial = Vec3::new(l.cos(), 0.0, l.sin());
-            let dir = radial * half.cos() + Vec3::Y * half.sin();
-            let binormal = Vec3::new(-l.sin(), 0.0, l.cos());
-            radial * 2.4 + dir * (p.y * 1.2) + binormal * (p.z * 0.35)
+            let up = Vec3::Y;
+            // Width direction lies in the (radial, up) plane, rotating by `half`.
+            let across = radial * half.cos() + up * half.sin();
+            let normal = radial * (-half.sin()) + up * half.cos();
+            radial * 2.8 + across * (p.y * 2.1) + normal * (p.z * 0.14)
         }
     }
 }
@@ -192,33 +219,65 @@ fn cycle(
 fn position_cells(
     board: Res<BoardResource>,
     topo: Res<Topology>,
+    peer: Res<PeerDistance>,
     mut q: Query<(&LatticeCell, &mut Transform)>,
 ) {
     let n = board.0.board.n;
     for (cell, mut tf) in &mut q {
-        tf.translation = embed(board.0.board.coord(cell.0), n, &topo);
+        tf.translation = embed(board.0.board.coord(cell.0), n, &topo) * peer.0;
     }
 }
 
 /// Re-fit every pipe between its two cells' current embedded positions (so the
 /// tubes stay connected through any morph), carrying the §4.6 grow-in.
+/// Per-bond perpendicular offset so the two face-diagonals (which would otherwise
+/// cross at the face centre) bow to opposite sides and pass clear of each other —
+/// keeping different-colour tubes from crossing. Offset is along the bond's
+/// zero-axis (the face normal); the sign comes from the product of its two
+/// non-zero components, which is opposite for the two diagonals of any face.
+fn crossing_offset(a: Coord, b: Coord) -> Vec3 {
+    const E: f32 = 0.32;
+    let di = b.i as i32 - a.i as i32;
+    let dj = b.j as i32 - a.j as i32;
+    let dk = b.k as i32 - a.k as i32;
+    let s = |x: i32| -> f32 { (x.signum()) as f32 };
+    if dk == 0 {
+        Vec3::Z * (s(di * dj) * E)
+    } else if dj == 0 {
+        Vec3::Y * (s(di * dk) * E)
+    } else if di == 0 {
+        Vec3::X * (s(dj * dk) * E)
+    } else {
+        Vec3::ZERO
+    }
+}
+
 fn position_pipes(
     time: Res<Time>,
     board: Res<BoardResource>,
     topo: Res<Topology>,
+    peer: Res<PeerDistance>,
+    tube: Res<TubeWidth>,
     mut q: Query<(&PipeEnds, &PipeBirth, &mut Transform)>,
 ) {
     let n = board.0.board.n;
     let now = time.elapsed_secs();
     for (ends, birth, mut tf) in &mut q {
-        let a = embed(board.0.board.coord(ends.0), n, &topo);
-        let b = embed(board.0.board.coord(ends.1), n, &topo);
-        let dir = b - a;
+        let ca = board.0.board.coord(ends.a);
+        let cb = board.0.board.coord(ends.b);
+        let ea = embed(ca, n, &topo) * peer.0;
+        let eb = embed(cb, n, &topo) * peer.0;
+        // Bow the midpoint perpendicular (crossings → opposite bows); each half
+        // runs from a sphere centre to that bowed midpoint, so the tube curves
+        // out and back into the sphere instead of crossing through the centre.
+        let mid = (ea + eb) * 0.5 + crossing_offset(ca, cb);
+        let (start, end) = if ends.half == 0 { (ea, mid) } else { (mid, eb) };
+        let dir = end - start;
         let len = dir.length().max(1.0e-4);
         let grow = smooth(((now - birth.0) / PIPE_GROW_SECS).clamp(0.0, 1.0)).max(0.02);
-        tf.translation = (a + b) * 0.5;
+        tf.translation = (start + end) * 0.5;
         tf.rotation = Quat::from_rotation_arc(Vec3::Y, dir / len);
-        tf.scale = Vec3::new(1.0, (len / PIPE_LEN) * grow, 1.0);
+        tf.scale = Vec3::new(tube.0, (len / PIPE_LEN) * grow, tube.0);
     }
 }
 

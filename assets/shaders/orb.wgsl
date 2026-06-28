@@ -82,13 +82,20 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     if (color.a >= 0.999) {
         // OPAQUE LIVE CORE → push SATURATION (not brightness) so the muted
-        // steward pigment reads as neon without blooming to white, which would
-        // also erase the glass edge. Saturate by pushing away from luminance.
+        // steward pigment reads as neon without blooming to white.
         let lum = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
         let sat = max(vec3<f32>(0.0), vec3<f32>(lum) + (color.rgb - vec3<f32>(lum)) * params2.x);
-        let core = sat * (neon_glow * (0.85 + 0.8 * wisp));
+        let neon = sat * (neon_glow * (0.85 + 0.8 * wisp));
+
+        // EXPERIMENTAL: X-cube dichroic beamsplitter — prismatic R/G/B by surface
+        // axis, but ONLY on the reflective fresnel rim (the glass/reflection),
+        // never the gas body, so it doesn't wash the core to white. params2.y =
+        // amount.
+        let rim_f = pow(1.0 - clamp(dot(nrm, view_dir), 0.0, 1.0), 3.0);
+        let prism_rim = (nrm * nrm) * (neon_glow * 2.0 * rim_f * params2.y);
+
         let sel_add = sat * (sel * (2.0 + 2.0 * wisp));
-        return vec4<f32>(core + sel_add, 1.0);
+        return vec4<f32>(neon + prism_rim + sel_add, 1.0);
     }
 
     // TRANSLUCENT EMPTY-POSITION MARKER → tiny clear grey glass: a faint body, a
