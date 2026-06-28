@@ -30,7 +30,7 @@
 //! custom-shader work, just stock camera + projection mutation.
 
 use bevy::input::gestures::PinchGesture;
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_panorbit_camera::PanOrbitCamera;
 
@@ -59,6 +59,9 @@ const WHEEL_LINE_GAIN: f32 = 1.5;
 const WHEEL_PIXELS_PER_LINE: f32 = 16.0;
 /// Trackpad / touch pinch magnification → desired forward velocity.
 const PINCH_GAIN: f32 = 12.0;
+/// Both-mouse-buttons drag: vertical pixels of motion → desired forward velocity
+/// (drag up = forward). Mouse users without a wheel get the §4.8 dolly this way.
+const DUAL_MOUSE_GAIN: f32 = 0.06;
 /// Time-constant (s) for the desired velocity to coast back to zero once input
 /// stops, so each scroll burst glides to a halt rather than running forever.
 const COAST_TAU: f32 = 0.18;
@@ -84,6 +87,8 @@ fn fly_through(
     time: Res<Time>,
     mut wheel: MessageReader<MouseWheel>,
     mut pinch: MessageReader<PinchGesture>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    motion: Res<AccumulatedMouseMotion>,
     mut nav: ResMut<NavState>,
     mut cam: Query<(&mut PanOrbitCamera, &Transform)>,
 ) {
@@ -92,8 +97,14 @@ fn fly_through(
         return;
     }
 
+    // Both mouse buttons held = the §4.8 forward/back dolly (an alternative to the
+    // two-finger / wheel path for mouse users). While both are down we suppress
+    // panorbit so its orbit (left) + pan (right) don't fight the dolly.
+    let dual = buttons.pressed(MouseButton::Left) && buttons.pressed(MouseButton::Right);
+
     // Collect this frame's "zoom-in is forward" input. Wheel-up (+y) and pinch-in
-    // (+magnification) both read as forward, mirroring the brief's pairing.
+    // (+magnification) both read as forward; two-finger trackpad drags arrive as
+    // pixel-unit wheel deltas, so they fly through too.
     let mut scroll = 0.0;
     for ev in wheel.read() {
         scroll += match ev.unit {
@@ -104,6 +115,16 @@ fn fly_through(
     for ev in pinch.read() {
         scroll += ev.0 * PINCH_GAIN;
     }
+    // Both-buttons drag: up = forward (screen-space +y is down, so negate).
+    if dual {
+        scroll += -motion.delta.y * DUAL_MOUSE_GAIN;
+    }
+
+    let Ok((mut orbit, transform)) = cam.single_mut() else {
+        return;
+    };
+    // Suppress panorbit's own orbit/pan only while both buttons drive the dolly.
+    orbit.enabled = !dual;
 
     // Drive the desired velocity from input, clamp to the speed cap, then let it
     // coast back to rest when no new input arrives this frame.
@@ -119,9 +140,6 @@ fn fly_through(
         return;
     }
 
-    let Ok((mut orbit, transform)) = cam.single_mut() else {
-        return;
-    };
     // Transform.forward() points camera → focus (Bevy forward is −Z). Translating
     // the focus along it moves the whole rig forward without disturbing orbit.
     let step = transform.forward().as_vec3() * (nav.vel * dt);

@@ -56,11 +56,6 @@ impl Material for PlasmaMaterial {
     }
 }
 
-/// The single shared plasma material handle (every empty cell clones it), so
-/// `hover.rs` can drive the cursor-attention uniform on one material per frame.
-#[derive(Resource)]
-pub(crate) struct PlasmaHandle(pub Handle<PlasmaMaterial>);
-
 /// Register the plasma material plugin. Added from `render::run_app`.
 pub(crate) fn plugin(app: &mut App) {
     app.add_plugins(MaterialPlugin::<PlasmaMaterial>::default());

@@ -23,6 +23,9 @@ pub use ciris_game_engine_core::*;
 pub mod palette;
 
 #[cfg(feature = "render")]
+mod attract;
+
+#[cfg(feature = "render")]
 mod effects;
 
 // Dev screenshot capture is native-only: `save_to_disk` writes a file on native
@@ -39,7 +42,10 @@ mod environment;
 #[cfg(feature = "render")]
 mod fonts;
 
+// Dormant for now — the plasma wireframe was retired in favour of empty-position
+// orbs; kept for a future scaffold attempt.
 #[cfg(feature = "render")]
+#[allow(dead_code)]
 mod geometry;
 
 #[cfg(feature = "render")]
@@ -62,6 +68,9 @@ mod mist;
 
 #[cfg(feature = "render")]
 mod navigation;
+
+#[cfg(feature = "render")]
+mod orb;
 
 #[cfg(feature = "render")]
 mod pipe;

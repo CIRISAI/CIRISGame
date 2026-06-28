@@ -1,17 +1,18 @@
-// Gas-pigment pipe (DESIGN_BRIEF §3.4).
+// Swirling-gas material (DESIGN_BRIEF §3.3/§3.4).
 //
-// A soft luminous gas of the steward's pigment drifting through the glass channel
-// between connected cells. Translucent, slowly churning, no physics (no gravity
-// fill, no slosh). WebGL2-safe by construction — no compute, no texture sampling,
-// a constant 2-octave noise loop, vec4-aligned uniforms, alpha-blended (no
-// derivatives), validated through naga to GLSL ES 300 like mist.wgsl.
+// A solid-colour steward gas that slowly SWIRLS — used both for the gas inside a
+// live sphere's clear glass shell and for the fat pipe between two connected
+// same-colour spheres. Deliberately a *solid colour* with gentle swirling motion
+// (not a busy noise pattern — patterns read as distracting texture). WebGL2-safe:
+// fragment-only, one smooth value-noise sample, constant loop bounds, vec4
+// uniforms, alpha-blended, no derivatives.
 
 #import bevy_pbr::forward_io::VertexOutput
-#import bevy_pbr::mesh_view_bindings::globals
+#import bevy_pbr::mesh_view_bindings::{globals, view}
 
-// rgb = steward pigment (linear); a = gas opacity.
+// rgb = steward pigment (linear); a = peak opacity.
 @group(3) @binding(0) var<uniform> color: vec4<f32>;
-// x = flow speed; y = noise freq; z = density gain; w = unused.
+// x = swirl speed; y = swirl scale; z = glow gain (HDR>1 → bloom); w = solidity.
 @group(3) @binding(1) var<uniform> params: vec4<f32>;
 
 // Cheap 3D hash → scalar in [0, 1] (Dave Hoskins style), webgl2-safe.
@@ -21,7 +22,7 @@ fn hash13(p3: vec3<f32>) -> f32 {
     return fract((p.x + p.y) * p.z);
 }
 
-// Trilinearly-interpolated value noise.
+// Trilinearly-interpolated value noise (one smooth octave).
 fn vnoise(p: vec3<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
@@ -43,36 +44,36 @@ fn vnoise(p: vec3<f32>) -> f32 {
     return mix(y0, y1, u.z);
 }
 
-// Two-octave fbm — the drifting gas body.
-fn fbm(p0: vec3<f32>) -> f32 {
-    var p = p0;
-    var n = 0.0;
-    var a = 0.6;
-    for (var o = 0; o < 2; o = o + 1) {
-        n += a * vnoise(p);
-        p = p * 2.02 + vec3<f32>(17.1, 9.2, 31.7);
-        a *= 0.5;
-    }
-    return n;
-}
-
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let speed = params.x;
-    let freq = params.y;
-    let density = params.z;
+    let scale = params.y;
+    let glow = params.z;
+    let solidity = params.w;
 
-    // Slow gaseous churn: drift the noise field along all three axes over time.
-    let drift = vec3<f32>(
-        globals.time * speed,
-        globals.time * speed * 0.7,
-        globals.time * speed * 0.5,
-    );
-    let n = fbm(in.world_position.xyz * freq + drift);
+    // Swirl: rotate the sample domain about Y over time + a slow vertical drift,
+    // so a single smooth noise sample reads as gently churning gas rather than a
+    // fixed texture.
+    let a = globals.time * speed;
+    let s = sin(a);
+    let c = cos(a);
+    let p = in.world_position.xyz * scale;
+    let q = vec3<f32>(p.x * c - p.z * s, p.y + a * 0.5, p.x * s + p.z * c);
+    let n = vnoise(q);
 
-    // Density-modulated translucency: thin wisps fade out, dense pockets glow.
-    let d = clamp(n * density, 0.0, 1.0);
-    let alpha = color.a * smoothstep(0.12, 0.85, d);
-    let glow = 0.55 + 0.75 * d;
-    return vec4<f32>(color.rgb * glow, alpha);
+    // Mostly solid colour: `solidity` pulls the field toward a uniform fill so the
+    // swirl only nudges brightness/opacity instead of painting a pattern.
+    let d = mix(n, 0.72, solidity);
+    let body = glow * (0.72 + 0.5 * d);
+
+    // Fresnel rim: brighten + thicken the silhouette so the gas reads as a
+    // volumetric glowing orb (and the pipe as a rounded tube), not a flat fill.
+    // Pushed into HDR so Bloom blooms the edges — the "hot" glow.
+    let nrm = normalize(in.world_normal);
+    let view_dir = normalize(view.world_position.xyz - in.world_position.xyz);
+    let fres = pow(1.0 - clamp(dot(nrm, view_dir), 0.0, 1.0), 3.0);
+    let rim = fres * glow * 1.7;
+
+    let alpha = clamp(color.a * (0.5 + 0.5 * d) + fres * 0.45, 0.0, 1.0);
+    return vec4<f32>(color.rgb * (body + rim), alpha);
 }

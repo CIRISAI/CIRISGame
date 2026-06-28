@@ -22,11 +22,11 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
-use crate::plasma::PlasmaMaterial;
+use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
-    effects, endgame, environment, fonts, geometry, hover, i18n, intro, lighting, materials, mist,
-    navigation, palette, pipe, plasma, screensaver, state, ui_theme, wizard,
+    attract, effects, endgame, environment, fonts, hover, i18n, intro, lighting, materials, mist,
+    navigation, orb, palette, pipe, plasma, screensaver, state, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -34,35 +34,34 @@ use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD
 /// Glass shell radius (DESIGN_BRIEF §3.1). `pub(crate)` so the effects layer can
 /// size orbit radii and pipe spans against it.
 pub(crate) const SHELL_RADIUS: f32 = 0.42;
-/// Inner core radius (DESIGN_BRIEF §3.1).
-const CORE_RADIUS: f32 = 0.25;
+/// Opaque steward-core radius (DESIGN_BRIEF §3.1/§3.3): the neon marble core
+/// inside the `SHELL_RADIUS` glass. At 0.36 vs 0.42 the clear glass is ~1/3 of
+/// the sphere's volume, so the refracting rim reads.
+const CORE_RADIUS: f32 = 0.36;
 /// Bloom-layer index for emissive cores (DESIGN_BRIEF §2.3 / §3.3). Shared with
 /// the effects layer so motes glow on the same layer.
 pub(crate) const BLOOM_LAYER: usize = 1;
-
-/// Per-steward Gray-Scott seed PNGs (DESIGN_BRIEF §4.2), in steward-slot order.
-const GS_SEED_PATHS: [&str; 4] = [
-    "textures/gs-seed-sienna.png",
-    "textures/gs-seed-lapis.png",
-    "textures/gs-seed-verdigris.png",
-    "textures/gs-seed-kaolin.png",
-];
 
 /// Shared mesh + material handles, built once at startup and cloned per cell.
 #[derive(Resource)]
 struct RenderAssets {
     shell_mesh: Handle<Mesh>,
-    ghost_mesh: Handle<Mesh>,
+    /// Small sphere marking a lattice position where a sphere could be placed
+    /// (empty cells) — a tiny clear grey glass orb. Replaces the plasma wireframe.
+    dot_mesh: Handle<Mesh>,
     core_mesh: Handle<Mesh>,
     ring_mesh: Handle<Mesh>,
+    /// Thick clear glass shell that refracts the opaque steward core into a
+    /// marble (DESIGN_BRIEF §3.2).
     glass_mat: Handle<StandardMaterial>,
     tempdead_mat: Handle<StandardMaterial>,
     permadead_mat: Handle<StandardMaterial>,
-    ghost_mat: Handle<StandardMaterial>,
-    plasma_mat: Handle<PlasmaMaterial>,
     ring_mat: Handle<StandardMaterial>,
-    /// Emissive core material per steward slot (0..=3).
-    core_mats: [Handle<StandardMaterial>; 4],
+    /// Tiny clear-grey glass orb for empty positions (DESIGN_BRIEF §3.5 reimagined).
+    empty_orb: Handle<OrbMaterial>,
+    /// Steward orb material per slot (0..=3) — the whole live sphere: thick clear
+    /// glass + two swirling gasses, one surface (DESIGN_BRIEF §3.2/§3.3).
+    core_orb: [Handle<OrbMaterial>; 4],
 }
 
 /// Per-cell entity table, indexed by linear board index.
@@ -74,14 +73,6 @@ struct CellEntities {
     core: Vec<Entity>,
     /// Kaolin's Ink outline (hidden unless the cell is a live Kaolin core).
     ring: Vec<Entity>,
-}
-
-/// Handles to the Gray-Scott seed images, baked to pigment masks once loaded.
-#[derive(Resource)]
-struct GsPatterns {
-    handles: [Handle<Image>; 4],
-    /// True once every seed PNG has loaded and been baked in place.
-    ready: bool,
 }
 
 /// Set whenever the board changes; [`sync_board`] consumes it. Starts `true` so
@@ -126,6 +117,7 @@ pub fn run_app() {
     // Liquid-pigment pipes: the custom `PipeMaterial` + the camera-driven slosh.
     .add_plugins(pipe::plugin)
     .add_plugins(plasma::plugin)
+    .add_plugins(orb::plugin)
     // Cursor-attention: hovered cell glows + plasma rushes inward (hover.rs).
     .add_plugins(hover::plugin)
     // Load the §5.1 UI faces so the front-of-house text actually renders.
@@ -133,7 +125,12 @@ pub fn run_app() {
     // Front-of-house: the Intro → Setup → Playing state machine (`state.rs`),
     // the click-through intro (`intro.rs`), and the setup wizard (`wizard.rs`).
     // The screensaver below keeps advancing in every state.
-    .add_plugins((state::plugin, intro::plugin, wizard::plugin))
+    .add_plugins((
+        state::plugin,
+        attract::plugin,
+        intro::plugin,
+        wizard::plugin,
+    ))
     .init_resource::<i18n::Localization>()
     .insert_resource(ClearColor(palette::INK_SRGB))
     .insert_resource(BoardResource(GameState::new(
@@ -148,7 +145,6 @@ pub fn run_app() {
     .add_systems(
         Update,
         (
-            bake_gs_patterns,
             // GameState → board entities → effect parameters → endgame, in
             // order; `clear_board_dirty` runs last so every consumer of
             // `BoardDirty` (sync_board, sync_effects) sees the same flag.
@@ -162,7 +158,6 @@ pub fn run_app() {
                 .chain(),
             // Per-frame motion reads the parameters above (one-frame latency
             // on a fresh board is imperceptible at the screensaver cadence).
-            effects::animate_motes,
             effects::breathe_cores,
             effects::grow_pipes,
             mist::animate_mist,
@@ -241,8 +236,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mist_materials: ResMut<Assets<mist::MistMaterial>>,
-    mut plasma_materials: ResMut<Assets<PlasmaMaterial>>,
-    asset_server: Res<AssetServer>,
+    mut orb_materials: ResMut<Assets<OrbMaterial>>,
     board: Res<BoardResource>,
 ) {
     let n = board.0.board.n;
@@ -302,17 +296,11 @@ fn setup(
     lighting::spawn_rig(&mut commands, scale);
     environment::spawn_dome(&mut commands, &mut meshes, &mut materials, scale);
 
-    // ── Gray-Scott seed textures (DESIGN_BRIEF §4.2) ────────────────────
-    // Loaded async; `bake_gs_patterns` converts each to a pigment mask in place
-    // once it arrives. The core materials reference the handles immediately.
-    let gs_handles: [Handle<Image>; 4] =
-        std::array::from_fn(|slot| asset_server.load(GS_SEED_PATHS[slot]));
-
     // ── shared meshes + materials (DESIGN_BRIEF §3.1/§3.2/§3.3/§3.6) ─────
     let assets = RenderAssets {
         shell_mesh: meshes.add(Sphere::new(SHELL_RADIUS).mesh().ico(4).unwrap()),
-        ghost_mesh: meshes.add(geometry::wireframe_mesh()),
-        // UV sphere for the core so the Gray-Scott pattern maps cleanly.
+        // Tiny empty-position marker sphere (half the previous size).
+        dot_mesh: meshes.add(Sphere::new(0.06).mesh().ico(3).unwrap()),
         core_mesh: meshes.add(Sphere::new(CORE_RADIUS).mesh().uv(48, 32)),
         ring_mesh: meshes.add(
             Sphere::new(CORE_RADIUS * materials::KAOLIN_RING_SCALE)
@@ -323,29 +311,21 @@ fn setup(
         glass_mat: materials.add(materials::glass()),
         tempdead_mat: materials.add(materials::tempdead()),
         permadead_mat: materials.add(materials::permadead()),
-        ghost_mat: materials.add(materials::ghost()),
-        plasma_mat: plasma_materials.add(PlasmaMaterial::default()),
         ring_mat: materials.add(materials::kaolin_ring()),
-        core_mats: [
-            materials.add(materials::core(
-                Steward::Sienna,
-                Some(gs_handles[0].clone()),
-            )),
-            materials.add(materials::core(Steward::Lapis, Some(gs_handles[1].clone()))),
-            materials.add(materials::core(
-                Steward::Verdigris,
-                Some(gs_handles[2].clone()),
-            )),
-            materials.add(materials::core(
-                Steward::Kaolin,
-                Some(gs_handles[3].clone()),
-            )),
+        empty_orb: orb_materials.add(orb::empty_material()),
+        core_orb: [
+            orb_materials.add(orb::material(Steward::Sienna)),
+            orb_materials.add(orb::material(Steward::Lapis)),
+            orb_materials.add(orb::material(Steward::Verdigris)),
+            orb_materials.add(orb::material(Steward::Kaolin)),
         ],
     };
 
-    // Share the one plasma handle with `hover.rs` so it can drive the
-    // cursor-attention uniform on a single material per frame.
-    commands.insert_resource(plasma::PlasmaHandle(assets.plasma_mat.clone()));
+    // Hand every orb material to `hover.rs` so it can drive the selection uniform
+    // (the sphere under the cursor swirls with light).
+    let mut orb_handles = vec![assets.empty_orb.clone()];
+    orb_handles.extend(assets.core_orb.iter().cloned());
+    commands.insert_resource(orb::OrbHandles(orb_handles));
 
     // ── one persistent frame + core + ring entity per cell ──────────────
     let count = board.0.board.len();
@@ -356,12 +336,13 @@ fn setup(
     for idx in 0..count {
         let pos = cell_world_pos(board.0.board.coord(idx), n);
         centers.push(pos);
-        // Frame starts as a ghost wireframe; sync_board paints the real state.
+        // Frame starts as the empty-position grey orb (matching `PrevStates`'
+        // initial all-Empty), so sync_board only repaints cells that change.
         frame.push(
             commands
                 .spawn((
-                    Mesh3d(assets.ghost_mesh.clone()),
-                    MeshMaterial3d(assets.ghost_mat.clone()),
+                    Mesh3d(assets.dot_mesh.clone()),
+                    MeshMaterial3d(assets.empty_orb.clone()),
                     Transform::from_translation(pos),
                 ))
                 .id(),
@@ -372,7 +353,7 @@ fn setup(
             commands
                 .spawn((
                     Mesh3d(assets.core_mesh.clone()),
-                    MeshMaterial3d(assets.core_mats[0].clone()),
+                    MeshMaterial3d(assets.core_orb[0].clone()),
                     Transform::from_translation(pos),
                     Visibility::Hidden,
                     RenderLayers::from_layers(&[0, BLOOM_LAYER]),
@@ -406,29 +387,6 @@ fn setup(
     commands.insert_resource(Transitions {
         became_live: vec![false; count],
     });
-    commands.insert_resource(GsPatterns {
-        handles: gs_handles,
-        ready: false,
-    });
-}
-
-/// Bake each Gray-Scott seed image into a pigment mask once it has loaded
-/// (DESIGN_BRIEF §4.2). Runs every frame until all four are ready, then idles.
-fn bake_gs_patterns(mut gs: ResMut<GsPatterns>, mut images: ResMut<Assets<Image>>) {
-    if gs.ready {
-        return;
-    }
-    // Wait until every seed PNG has finished loading before baking any of them,
-    // so the cores never flash the raw red/green field.
-    if gs.handles.iter().any(|h| images.get(h).is_none()) {
-        return;
-    }
-    for handle in &gs.handles {
-        if let Some(mut image) = images.get_mut(handle) {
-            materials::bake_pigment_mask(&mut image);
-        }
-    }
-    gs.ready = true;
 }
 
 /// Rewrite the per-cell entities from the live board, when something changed, and
@@ -474,35 +432,45 @@ fn sync_board(
                 transitions.became_live[idx] = true;
             }
         }
+        let changed = fresh || next != was;
         prev.0[idx] = next;
+        // Only repaint cells whose state actually changed. Re-inserting the mesh
+        // + material on all 125 cells every move re-prepares them in the render
+        // world, which reads as a strong redraw flicker as new spheres come in.
+        if !changed {
+            continue;
+        }
         // Kaolin's rim only shows for a live Kaolin core; default it off.
         let mut ring_visible = false;
         // The frame swaps material *type* between the empty cage (PlasmaMaterial)
         // and the live/dead shells (StandardMaterial), so each branch inserts one
         // and removes the other.
         match gs.board.get(idx) {
-            // Empty → flowing-plasma wireframe, core hidden (DESIGN_BRIEF §3.5).
+            // Empty → tiny clear-grey glass orb marking the position, core hidden.
             CellState::Empty => {
                 commands
                     .entity(frame)
                     .insert((
-                        Mesh3d(assets.ghost_mesh.clone()),
-                        MeshMaterial3d(assets.plasma_mat.clone()),
+                        Mesh3d(assets.dot_mesh.clone()),
+                        MeshMaterial3d(assets.empty_orb.clone()),
+                        Visibility::Visible,
                     ))
                     .remove::<MeshMaterial3d<StandardMaterial>>();
                 commands.entity(core).insert(Visibility::Hidden);
             }
-            // Live → glass shell + emissive steward core (§3.2/§3.3).
+            // Live → marble: thick clear glass shell refracting an opaque neon
+            // core inside it (§3.2/§3.3).
             CellState::Live(steward) => {
                 commands
                     .entity(frame)
                     .insert((
                         Mesh3d(assets.shell_mesh.clone()),
                         MeshMaterial3d(assets.glass_mat.clone()),
+                        Visibility::Visible,
                     ))
-                    .remove::<MeshMaterial3d<PlasmaMaterial>>();
+                    .remove::<MeshMaterial3d<OrbMaterial>>();
                 commands.entity(core).insert((
-                    MeshMaterial3d(assets.core_mats[steward.slot() as usize].clone()),
+                    MeshMaterial3d(assets.core_orb[steward.slot() as usize].clone()),
                     Visibility::Visible,
                 ));
                 ring_visible = steward == Steward::Kaolin;
@@ -514,8 +482,9 @@ fn sync_board(
                     .insert((
                         Mesh3d(assets.shell_mesh.clone()),
                         MeshMaterial3d(assets.tempdead_mat.clone()),
+                        Visibility::Visible,
                     ))
-                    .remove::<MeshMaterial3d<PlasmaMaterial>>();
+                    .remove::<MeshMaterial3d<OrbMaterial>>();
                 commands.entity(core).insert(Visibility::Hidden);
             }
             // Perma-dead → Verdigris-tinted shell, core off (§3.6).
@@ -525,8 +494,9 @@ fn sync_board(
                     .insert((
                         Mesh3d(assets.shell_mesh.clone()),
                         MeshMaterial3d(assets.permadead_mat.clone()),
+                        Visibility::Visible,
                     ))
-                    .remove::<MeshMaterial3d<PlasmaMaterial>>();
+                    .remove::<MeshMaterial3d<OrbMaterial>>();
                 commands.entity(core).insert(Visibility::Hidden);
             }
         }

@@ -15,15 +15,19 @@
 use bevy::prelude::*;
 use ciris_game_engine_core::Difficulty;
 
-/// The three front-of-house screens. Default is [`AppScreen::Intro`].
+/// The front-of-house screens. Default is [`AppScreen::Attract`] — the live
+/// screensaver with a single "Play Now" button; clicking it opens the overlay.
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AppScreen {
-    /// Click-through that teaches the one rule over a contained live hero.
+    /// Landing: full-screen live screensaver + a "Play Now" button. No overlay
+    /// until the player asks for it.
     #[default]
+    Attract,
+    /// Click-through that teaches the one rule over the live hero.
     Intro,
     /// The setup wizard: players, view/accessibility config, language.
     Setup,
-    /// The configured game; hero expands to full screen, no overlay.
+    /// The configured game; hero fills the screen, no overlay.
     Playing,
 }
 
@@ -37,6 +41,34 @@ pub enum AppMode {
     /// An out-of-process agent is driving: seat 0 defaults to Agent; step 2
     /// reads as §7 BoardView delivery knobs.
     Agent,
+}
+
+/// Detect a "boot straight into the screensaver" launch: the `--screensaver` CLI
+/// flag (or `CIRISGAME_MODE=screensaver`) on native, `?mode=screensaver` /
+/// `#screensaver` in the URL on wasm. Skips the Attract button and the overlay,
+/// landing directly on the clean ambient board (kiosk / display use).
+pub fn detect_screensaver() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(window) = web_sys::window() {
+            if let Ok(search) = window.location().search() {
+                if search.contains("screensaver") {
+                    return true;
+                }
+            }
+            if let Ok(hash) = window.location().hash() {
+                if hash.contains("screensaver") {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::env::args().any(|a| a == "--screensaver")
+            || matches!(std::env::var("CIRISGAME_MODE"), Ok(v) if v.eq_ignore_ascii_case("screensaver"))
+    }
 }
 
 /// Detect [`AppMode`] from the environment: the `?mode=agent` URL query on wasm,
@@ -217,7 +249,14 @@ pub const SIZES: [u32; 4] = [96, 128, 192, 256];
 /// detected launch mode. Added by `render.rs` before the UI plugins.
 pub fn plugin(app: &mut App) {
     let mode = detect_mode();
-    app.init_state::<AppScreen>()
+    // A `--screensaver` launch drops straight onto the clean ambient board;
+    // otherwise land on Attract (screensaver + a "Play Now" button).
+    let start = if detect_screensaver() {
+        AppScreen::Playing
+    } else {
+        AppScreen::Attract
+    };
+    app.insert_state(start)
         .insert_resource(mode)
         .insert_resource(RosterConfig::default_for(mode))
         .insert_resource(ViewConfig::default())

@@ -35,7 +35,9 @@ const VERTICES: [[f32; 3]; 14] = [
 ];
 
 /// The 24 edges — each apex joins the four cube corners sharing its axis sign.
-/// Mirror of `assets/geometry/rhombic-dodeca-edges.ron`.
+/// Mirror of `assets/geometry/rhombic-dodeca-edges.ron` (the canonical full cage;
+/// [`SPARSE_EDGES`] selects the subset actually drawn).
+#[allow(dead_code)]
 const EDGES: [(usize, usize); 24] = [
     (8, 0),
     (8, 1),
@@ -63,20 +65,39 @@ const EDGES: [(usize, usize); 24] = [
     (13, 7),
 ];
 
-/// Build the rhombic-dodecahedron wireframe as a `LineList` `Mesh` (DESIGN_BRIEF
-/// §3.5). Positions are emitted as one segment per edge; `NORMAL` and `UV_0` are
-/// filled so the `StandardMaterial` vertex layout is satisfied on every backend
-/// (the material is unlit, so their values are immaterial).
+/// A **sparse** subset of [`EDGES`] — one diagonal strut per rhombic face (12 of
+/// the 24 edges). The full cage reads as a busy wireframe; this sparser shell
+/// just hints the cell boundary, separating the spheres and keeping sight-lines
+/// open for the §4.8 fly-through (DESIGN_BRIEF §3.5).
+const SPARSE_EDGES: [(usize, usize); 12] = [
+    (8, 0),
+    (8, 3),
+    (9, 4),
+    (9, 7),
+    (10, 0),
+    (10, 5),
+    (11, 2),
+    (11, 7),
+    (12, 0),
+    (12, 6),
+    (13, 1),
+    (13, 7),
+];
+
+/// Build the sparse rhombic-dodecahedron shell as tube geometry (DESIGN_BRIEF
+/// §3.5): each [`SPARSE_EDGES`] strut becomes a thin prism so the plasma material
+/// has surface to bloom on (a `LineList` renders as flat 1-px wire that can't read
+/// as plasma). `NORMAL`/`UV_0` are filled for the material's vertex layout.
 pub fn wireframe_mesh() -> Mesh {
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
     let mut uvs: Vec<[f32; 2]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
 
-    let radius = 0.015;
+    let radius = 0.02;
     let sides = 6;
 
-    for &(a_idx, b_idx) in &EDGES {
+    for &(a_idx, b_idx) in &SPARSE_EDGES {
         let a = Vec3::from(VERTICES[a_idx]);
         let b = Vec3::from(VERTICES[b_idx]);
         let dir = (b - a).normalize();

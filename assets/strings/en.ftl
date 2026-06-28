@@ -121,3 +121,6 @@ quality-high = High
 text-size-small = Small
 text-size-normal = Normal
 text-size-large = Large
+
+# Attract screen
+play-now = Play Now

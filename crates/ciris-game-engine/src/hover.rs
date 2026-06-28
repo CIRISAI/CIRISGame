@@ -13,7 +13,7 @@ use bevy::camera::Camera3d;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use crate::plasma::{PlasmaHandle, PlasmaMaterial};
+use crate::orb::{OrbHandles, OrbMaterial};
 use crate::render::cell_world_pos;
 use crate::BoardResource;
 
@@ -73,8 +73,8 @@ fn update_hover(
     board: Res<BoardResource>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    plasma_handle: Option<Res<PlasmaHandle>>,
-    mut plasma: ResMut<Assets<PlasmaMaterial>>,
+    orb_handles: Option<Res<OrbHandles>>,
+    mut orbs: ResMut<Assets<OrbMaterial>>,
     mut state: ResMut<HoverState>,
     mut light: Query<(&mut PointLight, &mut Transform), With<HoverLight>>,
 ) {
@@ -113,10 +113,14 @@ fn update_hover(
     }
     state.strength += (goal_strength - state.strength) * k;
 
-    // Drive the shared plasma material (xyz = focus, w = strength).
-    if let Some(handle) = plasma_handle {
-        if let Some(mut mat) = plasma.get_mut(&handle.0) {
-            mat.hover = state.pos.extend(state.strength);
+    // Drive every orb material's selection uniform (xyz = focus, w = strength)
+    // so the sphere nearest the cursor swirls with light.
+    if let Some(handles) = orb_handles {
+        let hover = state.pos.extend(state.strength);
+        for h in &handles.0 {
+            if let Some(mut mat) = orbs.get_mut(h) {
+                mat.hover = hover;
+            }
         }
     }
 

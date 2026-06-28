@@ -14,7 +14,7 @@ use ciris_game_engine_core::{
 };
 
 /// Inter-move pacing in screensaver (knob `turn.pause_screensaver_ms` = 2500).
-const STEP_SECS: f32 = 2.5;
+const STEP_SECS: f32 = 2.0;
 /// Hold on the final board before restarting (knob `endgame.autoRestart.normal`
 /// = 10 s).
 const HOLD_SECS: f32 = 10.0;
