@@ -7,13 +7,15 @@ name: Deploy to GitHub Pages
 # server-side web shell. index.html is a thin ES-module loader that calls
 # wasm-bindgen's init() and lets Bevy render into a full-viewport canvas.
 #
-# webgl2 is the Pages target (widest browser coverage, no WebGPU origin-trial
-# required). webgpu artifacts are built separately in build.yml.
+# webgpu is the Pages target: the look needs HDR + Bloom, which the WebGL2
+# backend can't do in-browser (renders magenta). Browsers without WebGPU get a
+# friendly notice. assets/ (shaders + textures) is copied into dist/ for runtime
+# loading.
 
 on:
-  # Dispatch-only: deploy is held until visuals are approved.
-  # Enable push: main here (and the Pages source in repo settings) when ready
-  # to go live. Until then, trigger manually via the Actions UI or gh workflow run.
+  # Live: every push to main redeploys. (Also runnable manually.)
+  push:
+    branches: [main]
   workflow_dispatch:
 
 # Pages deployments must not be interrupted mid-flight.
@@ -49,7 +51,7 @@ jobs:
         continue-on-error: true
         with:
           cache-bin: false
-          key: pages-wasm32-webgl2
+          key: pages-wasm32-webgpu
 
       # wasm-bindgen-cli version MUST match the `wasm-bindgen` crate in Cargo.lock.
       # Cargo.lock pin: wasm-bindgen = "0.2.126". A mismatch causes a hard error
@@ -62,13 +64,15 @@ jobs:
           retry_wait_seconds: 30
           command: cargo install wasm-bindgen-cli --version 0.2.126 --locked
 
-      # webgl2: widest browser coverage; mutually exclusive with webgpu so
-      # --no-default-features is required to prevent the native x11/wayland
-      # features from pulling in system libs that don't exist on the runner.
-      - name: Build (wasm32 + webgl2)
+      # webgpu: the look depends on HDR + Bloom, and HDR doesn't work on the
+      # WebGL2 backend in-browser (bevy #7352) — it renders magenta, exactly the
+      # bug we hit on Metal. WebGPU supports HDR and has wide 2026 browser cover
+      # (Chrome/Edge/Safari 18+/Firefox). --no-default-features drops the native
+      # x11/wayland features so no system libs are needed on the runner.
+      - name: Build (wasm32 + webgpu)
         run: >-
           cargo build -p ciris-game-engine
-          --no-default-features --features webgl2
+          --no-default-features --features webgpu
           --release --target wasm32-unknown-unknown
 
       # Write the loader stub first so dist/ is non-empty even if the wasm
@@ -77,6 +81,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
+          # The wasm loads shaders (assets/shaders/*.wgsl) + Gray-Scott textures
+          # (assets/textures/*.png) at runtime via AssetServer; ship them. Bevy's
+          # web fetch is relative, so /CIRISGame/assets/... resolves correctly.
+          cp -r assets dist/assets
           touch dist/.nojekyll
           cat > dist/index.html << 'HTMLEOF'
           <!DOCTYPE html>
@@ -107,7 +115,16 @@ jobs:
             <script type="module">
               /* wasm-bindgen ES-module glue — relative path works under /CIRISGame/ */
               import init from './ciris-game.js';
-              init();
+              if (!navigator.gpu) {
+                document.body.innerHTML =
+                  '<div style="color:#E8E6DC;font:16px system-ui;display:grid;' +
+                  'place-items:center;height:100%;text-align:center;padding:2rem">' +
+                  'CIRISGame needs a WebGPU browser<br>' +
+                  '<span style="color:#B0AEA5;font-size:13px">Try Chrome, Edge, ' +
+                  'Safari&nbsp;18+, or Firefox.</span></div>';
+              } else {
+                init();
+              }
             </script>
           </body>
           </html>
