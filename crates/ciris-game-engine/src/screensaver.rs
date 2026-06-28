@@ -48,6 +48,16 @@ impl Default for ScreensaverState {
     }
 }
 
+impl ScreensaverState {
+    /// Extend (or shorten) the post-game hold and restart its countdown. The
+    /// endgame ceremony uses this so the §4.7 WILD ending gets its full 18 s.
+    pub fn set_hold(&mut self, secs: f32) {
+        self.hold
+            .set_duration(std::time::Duration::from_secs_f32(secs));
+        self.hold.reset();
+    }
+}
+
 /// Deterministic AI RNG, distinct from the game's own internal dispersal RNG.
 #[derive(Resource)]
 pub struct AiRng(pub ChaCha8Rng);

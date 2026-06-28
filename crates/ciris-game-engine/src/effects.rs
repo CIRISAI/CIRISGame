@@ -15,7 +15,7 @@ use std::f32::consts::TAU;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
-use crate::render::{cell_world_pos, BoardDirty, BLOOM_LAYER, SHELL_RADIUS};
+use crate::render::{cell_world_pos, BoardDirty, Transitions, BLOOM_LAYER, SHELL_RADIUS};
 use crate::{materials, BoardResource};
 use ciris_game_engine_core::{temperature, CellState, Steward, ATARI_SIZE};
 
@@ -48,6 +48,14 @@ const BREATH_SCALE_AMP: f32 = 0.06;
 /// Atari orbit angular speed (rad/s), slower than calm (DESIGN_BRIEF §3.9).
 const ATARI_OMEGA: f32 = 0.35;
 
+/// Core fade-in duration when a cell becomes live, e.g. the §4.6 dispersal
+/// rebuild "cores reappear" beat (also a gentle pop-in for ordinary placements).
+const CORE_BIRTH_SECS: f32 = 0.5;
+/// New-pipe extrude duration along the channel (DESIGN_BRIEF §4.6).
+const PIPE_GROW_SECS: f32 = 0.4;
+/// A birth timestamp far enough in the past to read as "fully grown".
+const BORN_LONG_AGO: f32 = -1000.0;
+
 /// Per-cell animation parameters, rebuilt from `GameState` on every
 /// [`BoardDirty`] and read each frame by the animation systems.
 #[derive(Clone, Copy)]
@@ -66,6 +74,9 @@ struct CellAnimEntry {
     t_vis: f32,
     /// True when this cell belongs to a mesh in atari (`|M| = ATARI_SIZE`).
     atari: bool,
+    /// `Time::elapsed_secs` when this core last became live; drives the §4.6
+    /// fade-in. [`BORN_LONG_AGO`] means "already settled".
+    birth: f32,
 }
 
 impl Default for CellAnimEntry {
@@ -78,6 +89,7 @@ impl Default for CellAnimEntry {
             omega: 0.6,
             t_vis: 0.0,
             atari: false,
+            birth: BORN_LONG_AGO,
         }
     }
 }
@@ -117,6 +129,12 @@ pub(crate) struct Mote {
 /// cell's linear index for the [`CellAnim`] lookup.
 #[derive(Component)]
 pub(crate) struct CoreCell(pub usize);
+
+/// A glass pipe, carrying the time it was spawned so [`grow_pipes`] can extrude
+/// it along its length (DESIGN_BRIEF §4.6). Pipes that existed before the move are
+/// born "long ago" and spawn at full length.
+#[derive(Component)]
+pub(crate) struct PipeBirth(f32);
 
 /// Build the shared effect assets, the mote pool, and the atari rings, and seed
 /// [`CellAnim`]. Called from `render::setup` once the per-cell entity table
@@ -205,9 +223,12 @@ pub(crate) fn setup_effects(
 
 /// Rebuild the per-cell animation parameters, the glass pipes, and the atari
 /// rings from the live board. Runs after `sync_board` on every [`BoardDirty`].
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn sync_effects(
     dirty: Res<BoardDirty>,
+    time: Res<Time>,
     board: Res<BoardResource>,
+    transitions: Res<Transitions>,
     assets: Res<EffectAssets>,
     mut anim: ResMut<CellAnim>,
     mut state: ResMut<EffectState>,
@@ -279,6 +300,13 @@ pub(crate) fn sync_effects(
                 0.6 + 0.25 * t_vis
             };
         }
+        // Stamp a birth time for cores that just came live (§4.6 fade-in); carry
+        // the prior time forward for cores that were already settled.
+        e.birth = if transitions.became_live[idx] {
+            time.elapsed_secs()
+        } else {
+            anim.0[idx].birth
+        };
         anim.0[idx] = e;
 
         // Foreshadowing ring follows atari state.
@@ -308,16 +336,26 @@ pub(crate) fn sync_effects(
             }
             let cb = anim.0[nb].center;
             let dir = (cb - ca).normalize();
+            // A pipe touching a freshly-live cell extrudes from nothing; pipes
+            // between long-settled cells spawn at full length (§4.6).
+            let born = transitions.became_live[idx] || transitions.became_live[nb];
+            let birth = if born {
+                time.elapsed_secs()
+            } else {
+                BORN_LONG_AGO
+            };
+            let start_len = if born { 0.02 } else { 1.0 };
             let transform = Transform {
                 translation: (ca + cb) * 0.5,
                 rotation: Quat::from_rotation_arc(Vec3::Y, dir),
-                scale: Vec3::ONE,
+                scale: Vec3::new(1.0, start_len, 1.0),
             };
             let pipe = commands
                 .spawn((
                     Mesh3d(assets.pipe_mesh.clone()),
                     MeshMaterial3d(assets.pipe_mats[steward.slot() as usize].clone()),
                     transform,
+                    PipeBirth(birth),
                 ))
                 .id();
             state.pipes.push(pipe);
@@ -385,8 +423,29 @@ pub(crate) fn breathe_cores(
             continue;
         }
         let s = if e.atari { breath } else { 1.0 };
-        tf.scale = Vec3::splat(s);
+        // Fade-in: scale the core up from a point over CORE_BIRTH_SECS when it
+        // first comes live (§4.6 dispersal "cores reappear").
+        let birth = smoothstep01((t - e.birth) / CORE_BIRTH_SECS);
+        tf.scale = Vec3::splat(s * birth);
     }
+}
+
+/// Extrude newly-spawned pipes along their length over [`PIPE_GROW_SECS`]
+/// (DESIGN_BRIEF §4.6). Pipes born "long ago" are already at full length.
+pub(crate) fn grow_pipes(time: Res<Time>, mut pipes: Query<(&PipeBirth, &mut Transform)>) {
+    let t = time.elapsed_secs();
+    for (birth, mut tf) in &mut pipes {
+        let g = smoothstep01((t - birth.0) / PIPE_GROW_SECS).max(0.02);
+        if (tf.scale.y - g).abs() > 1.0e-4 {
+            tf.scale.y = g;
+        }
+    }
+}
+
+/// Smooth Hermite ramp clamped to `[0, 1]`.
+fn smoothstep01(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
 }
 
 /// Linear board index → `Coord`, without borrowing the board (the centre cache is

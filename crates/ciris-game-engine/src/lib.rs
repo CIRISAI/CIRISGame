@@ -26,6 +26,9 @@ pub mod palette;
 mod effects;
 
 #[cfg(feature = "render")]
+mod endgame;
+
+#[cfg(feature = "render")]
 mod environment;
 
 #[cfg(feature = "render")]
@@ -36,6 +39,9 @@ mod lighting;
 
 #[cfg(feature = "render")]
 mod materials;
+
+#[cfg(feature = "render")]
+mod mist;
 
 #[cfg(feature = "render")]
 mod render;

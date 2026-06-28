@@ -21,7 +21,9 @@ use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::prelude::*;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
-use crate::{effects, environment, geometry, lighting, materials, palette, screensaver};
+use crate::{
+    effects, endgame, environment, geometry, lighting, materials, mist, palette, screensaver,
+};
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
 
@@ -82,6 +84,21 @@ struct GsPatterns {
 #[derive(Resource)]
 pub struct BoardDirty(pub bool);
 
+/// The board's cell states as of the last [`sync_board`] pass. Diffed against the
+/// live board each [`BoardDirty`] to detect the §4.6 collapse / dispersal
+/// transitions that drive the mist and cascade animations.
+#[derive(Resource)]
+pub(crate) struct PrevStates(pub Vec<CellState>);
+
+/// Per-cell transition flags for the current move, written by [`sync_board`] and
+/// read by the effect layer (core birth-in, pipe extrude). Reset every diff.
+#[derive(Resource)]
+pub(crate) struct Transitions {
+    /// Cells that became `Live` this move (any → Live): §4.6 core fade-in + the
+    /// new-pipe extrude.
+    pub became_live: Vec<bool>,
+}
+
 /// Build the App and run it (windowed / wasm).
 pub fn run_app() {
     App::new()
@@ -98,6 +115,7 @@ pub fn run_app() {
             ..default()
         }))
         .add_plugins(PanOrbitCameraPlugin)
+        .add_plugins(mist::plugin)
         .insert_resource(ClearColor(palette::BONE_SRGB))
         .insert_resource(BoardResource(GameState::new(
             DEFAULT_BOARD_N,
@@ -106,17 +124,29 @@ pub fn run_app() {
         .insert_resource(BoardDirty(true))
         .insert_resource(screensaver::ScreensaverState::new())
         .insert_resource(screensaver::AiRng::new(0))
+        .init_resource::<endgame::Ending>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
                 bake_gs_patterns,
-                // GameState → board entities → effect parameters, in order.
-                (screensaver::drive, sync_board, effects::sync_effects).chain(),
+                // GameState → board entities → effect parameters → endgame, in
+                // order; `clear_board_dirty` runs last so every consumer of
+                // `BoardDirty` (sync_board, sync_effects) sees the same flag.
+                (
+                    screensaver::drive,
+                    sync_board,
+                    effects::sync_effects,
+                    endgame::drive_endgame,
+                    clear_board_dirty,
+                )
+                    .chain(),
                 // Per-frame motion reads the parameters above (one-frame latency
                 // on a fresh board is imperceptible at the screensaver cadence).
                 effects::animate_motes,
                 effects::breathe_cores,
+                effects::grow_pipes,
+                mist::animate_mist,
             ),
         )
         .run();
@@ -134,6 +164,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut mist_materials: ResMut<Assets<mist::MistMaterial>>,
     asset_server: Res<AssetServer>,
     board: Res<BoardResource>,
 ) {
@@ -211,8 +242,10 @@ fn setup(
     let mut frame = Vec::with_capacity(count);
     let mut core = Vec::with_capacity(count);
     let mut ring = Vec::with_capacity(count);
+    let mut centers = Vec::with_capacity(count);
     for idx in 0..count {
         let pos = cell_world_pos(board.0.board.coord(idx), n);
+        centers.push(pos);
         // Frame starts as a ghost wireframe; sync_board paints the real state.
         frame.push(
             commands
@@ -254,8 +287,15 @@ fn setup(
     // seeds the per-cell animation parameters (DESIGN_BRIEF §3.4/§3.9/§4.9).
     effects::setup_effects(&mut commands, &mut meshes, &mut materials, n, count, &core);
 
+    // Tier-C drama: one hidden per-cell mist volume + material (DESIGN_BRIEF §3.6).
+    mist::setup_mist(&mut commands, &mut meshes, &mut mist_materials, &centers);
+
     commands.insert_resource(assets);
     commands.insert_resource(CellEntities { frame, core, ring });
+    commands.insert_resource(PrevStates(vec![CellState::Empty; count]));
+    commands.insert_resource(Transitions {
+        became_live: vec![false; count],
+    });
     commands.insert_resource(GsPatterns {
         handles: gs_handles,
         ready: false,
@@ -281,22 +321,50 @@ fn bake_gs_patterns(mut gs: ResMut<GsPatterns>, mut images: ResMut<Assets<Image>
     gs.ready = true;
 }
 
-/// Rewrite the per-cell entities from the live board, when something changed.
+/// Rewrite the per-cell entities from the live board, when something changed, and
+/// detect the §4.6 collapse / dispersal transitions that drive the mist and
+/// cascade. Does *not* clear [`BoardDirty`] — [`clear_board_dirty`] does that last
+/// so [`effects::sync_effects`] sees the same flag.
+#[allow(clippy::too_many_arguments)]
 fn sync_board(
-    mut dirty: ResMut<BoardDirty>,
+    dirty: Res<BoardDirty>,
+    time: Res<Time>,
     board: Res<BoardResource>,
     cells: Res<CellEntities>,
     assets: Res<RenderAssets>,
+    mut prev: ResMut<PrevStates>,
+    mut mist_state: ResMut<mist::MistState>,
+    mut transitions: ResMut<Transitions>,
     mut commands: Commands,
 ) {
     if !dirty.0 {
         return;
     }
     let gs = &board.0;
+    let now = time.elapsed_secs();
+    // A fresh game (no placements yet) initialises mist at rest without playing
+    // any transition; otherwise diff the previous states to find what changed.
+    let fresh = gs.turn == 0;
+    for f in transitions.became_live.iter_mut() {
+        *f = false;
+    }
     for idx in 0..gs.board.len() {
         let frame = cells.frame[idx];
         let core = cells.core[idx];
         let ring = cells.ring[idx];
+
+        // Transition detection (drives mist + cascade) before repainting.
+        let next = gs.board.get(idx);
+        let was = prev.0[idx];
+        if fresh {
+            mist_state.reset_cell(idx, next);
+        } else if next != was {
+            mist_state.on_transition(idx, was, next, now);
+            if matches!(next, CellState::Live(_)) {
+                transitions.became_live[idx] = true;
+            }
+        }
+        prev.0[idx] = next;
         // Kaolin's rim only shows for a live Kaolin core; default it off.
         let mut ring_visible = false;
         match gs.board.get(idx) {
@@ -344,5 +412,9 @@ fn sync_board(
             Visibility::Hidden
         });
     }
+}
+
+/// Clear [`BoardDirty`] after every dirty-driven sync system has run this frame.
+fn clear_board_dirty(mut dirty: ResMut<BoardDirty>) {
     dirty.0 = false;
 }

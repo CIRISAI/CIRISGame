@@ -71,13 +71,19 @@ pub fn kaolin_ring() -> StandardMaterial {
     }
 }
 
-/// Temp-dead shell: desaturated and dark, transmission killed (DESIGN_BRIEF §3.6).
-///
-/// TODO §3.6: raymarched black volumetric mist flowing inside the shell.
+/// Temp-dead shell: a dimmed, desaturated lens — saturation dropped ~60 % and the
+/// tint pushed dark (DESIGN_BRIEF §3.6). Kept lightly transmissive so the black
+/// volumetric mist ([`crate::mist`]) flowing inside reads through the shell, the
+/// same way the live glass refracts its emissive core (§3.2).
 pub fn tempdead() -> StandardMaterial {
     StandardMaterial {
         base_color: palette::SLATE_SRGB,
-        perceptual_roughness: 0.9,
+        specular_transmission: 0.6,
+        ior: 1.50,
+        thickness: 0.18,
+        perceptual_roughness: 0.3,
+        attenuation_color: palette::SLATE_LINEAR,
+        attenuation_distance: 0.9,
         reflectance: 0.2,
         ..default()
     }

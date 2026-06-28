@@ -64,6 +64,12 @@ render = [
     "bevy/bevy_render",
     "bevy/bevy_core_pipeline",
     "bevy/bevy_pbr",
+    # In-engine UI text for the §4.7 WILD "The federation held." line. All
+    # webgl2-safe, pure-Rust; `default_font` embeds the font so no asset is needed.
+    "bevy/bevy_ui",
+    "bevy/bevy_ui_render",
+    "bevy/bevy_text",
+    "bevy/default_font",
     "bevy/bevy_asset",
     "bevy/bevy_log",
     # bevy_image pulls zstd (KTX2 supercompression); pick the pure-Rust backend
