@@ -35,6 +35,12 @@ bevy_panorbit_camera = { version = "0.35", optional = true }
 # so the workspace resolves a single copy. Render-only (gated by `render`).
 rand_chacha = { version = "0.3", default-features = false, optional = true }
 rand_core = { version = "0.6", default-features = false, optional = true }
+# Localization: Project Fluent (.ftl) runtime. Pure-Rust and wasm-safe; the
+# umbrella crate re-exports fluent-bundle. `unic-langid` supplies the LanguageId
+# parsing + RTL/script lookup. Render-only — the headless build links no UI and
+# so needs no strings. See `i18n.rs`.
+fluent = { version = "0.17", optional = true }
+unic-langid = { version = "0.9", optional = true }
 
 [features]
 # Native windowed render is the default (CLAUDE.md `cargo build --release`).
@@ -58,14 +64,20 @@ render = [
     "dep:bevy_panorbit_camera",
     "dep:rand_chacha",
     "dep:rand_core",
+    "dep:fluent",
+    "dep:unic-langid",
     "bevy/std",
     "bevy/bevy_winit",
     "bevy/bevy_window",
     "bevy/bevy_render",
     "bevy/bevy_core_pipeline",
     "bevy/bevy_pbr",
-    # In-engine UI text for the §4.7 WILD "The federation held." line. All
-    # webgl2-safe, pure-Rust; `default_font` embeds the font so no asset is needed.
+    # The Bevy States machine (Intro → Setup → Playing, see `state.rs`). Not in
+    # the umbrella default set we opted out of, so name it explicitly.
+    "bevy/bevy_state",
+    # In-engine UI for the intro, the setup wizard, and the §4.7 WILD line. All
+    # webgl2-safe, pure-Rust; `default_font` embeds a font so the UI renders even
+    # when no system family (Inter / Source Serif 4 / JetBrains Mono) resolves.
     "bevy/bevy_ui",
     "bevy/bevy_ui_render",
     "bevy/bevy_text",
@@ -93,3 +105,10 @@ pbr_transmission_textures = ["render", "bevy/pbr_transmission_textures"]
 
 # Headless: links NO rendering. Just enough bevy for an App + MinimalPlugins.
 headless = ["bevy/std"]
+
+# wasm-only: read `?mode=agent` off the page URL to flip the wizard defaults
+# (`state::detect_mode`). web-sys is already in the tree via bevy_winit on wasm,
+# so naming the `Window`/`Location` bindings here adds no new crate. Native reads
+# the `CIRISGAME_MODE` env var instead and pulls nothing.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Location"] }

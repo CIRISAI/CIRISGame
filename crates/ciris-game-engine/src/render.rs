@@ -22,7 +22,8 @@ use bevy::prelude::*;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
 use crate::{
-    effects, endgame, environment, geometry, lighting, materials, mist, palette, screensaver,
+    effects, endgame, environment, geometry, i18n, intro, lighting, materials, mist, palette,
+    screensaver, state, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -116,6 +117,11 @@ pub fn run_app() {
         }))
         .add_plugins(PanOrbitCameraPlugin)
         .add_plugins(mist::plugin)
+        // Front-of-house: the Intro → Setup → Playing state machine (`state.rs`),
+        // the click-through intro (`intro.rs`), and the setup wizard (`wizard.rs`).
+        // The screensaver below keeps advancing in every state.
+        .add_plugins((state::plugin, intro::plugin, wizard::plugin))
+        .init_resource::<i18n::Localization>()
         .insert_resource(ClearColor(palette::BONE_SRGB))
         .insert_resource(BoardResource(GameState::new(
             DEFAULT_BOARD_N,
@@ -147,6 +153,8 @@ pub fn run_app() {
                 effects::breathe_cores,
                 effects::grow_pipes,
                 mist::animate_mist,
+                // Hover/press feedback for every front-of-house button.
+                ui_theme::button_visuals,
             ),
         )
         .run();

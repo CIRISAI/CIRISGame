@@ -35,6 +35,12 @@ mod environment;
 mod geometry;
 
 #[cfg(feature = "render")]
+mod i18n;
+
+#[cfg(feature = "render")]
+mod intro;
+
+#[cfg(feature = "render")]
 mod lighting;
 
 #[cfg(feature = "render")]
@@ -48,6 +54,15 @@ mod render;
 
 #[cfg(feature = "render")]
 mod screensaver;
+
+#[cfg(feature = "render")]
+mod state;
+
+#[cfg(feature = "render")]
+mod ui_theme;
+
+#[cfg(feature = "render")]
+mod wizard;
 
 /// The live game, wrapped as a Bevy `Resource`. The screensaver driver
 /// (`screensaver.rs`) advances it; the render sync system (`render.rs`) observes
