@@ -25,6 +25,11 @@ pub mod palette;
 #[cfg(feature = "render")]
 mod effects;
 
+// Dev screenshot capture is native-only: `save_to_disk` writes a file on native
+// but triggers a browser download on wasm (see `capture.rs`).
+#[cfg(all(feature = "render", not(target_arch = "wasm32")))]
+mod capture;
+
 #[cfg(feature = "render")]
 mod endgame;
 
@@ -48,6 +53,9 @@ mod materials;
 
 #[cfg(feature = "render")]
 mod mist;
+
+#[cfg(feature = "render")]
+mod pipe;
 
 #[cfg(feature = "render")]
 mod render;

@@ -3,13 +3,17 @@
 //! with the [`ChildOf`] relationship rather than `with_children` closures, so the
 //! data-driven rebuild-on-change in `intro.rs` / `wizard.rs` stays flat.
 //!
-//! Both screens overlay opaque Bone panels over the live screensaver, leaving a
-//! single transparent rectangle that frames the hero — no camera viewport
-//! juggling, one render path, webgl2-safe (see `intro.rs`).
+//! Both screens overlay opaque Bone panels around the live hero, leaving a
+//! transparent rectangle through which the 3D shows. That rectangle is the *real*
+//! camera viewport sub-rect (`render::update_camera_viewport`) — the Bone panels
+//! only frame it, they no longer mask the scene. The hero rectangle's fractions
+//! ([`hero_rect`]) are shared by both the overlay below and the viewport system so
+//! the two always line up.
 
 use bevy::prelude::*;
 
 use crate::palette;
+use crate::state::AppScreen;
 
 // ── type stack (DESIGN_BRIEF §5.1) ──────────────────────────────────────
 /// Inter — HUD labels, steward names, button text.
@@ -172,18 +176,43 @@ pub fn button_visuals(
     }
 }
 
+/// Hero rectangle as `[left, top, width, height]` fractions of the window, for
+/// each front-of-house screen. The intro shows a larger contained hero; the setup
+/// wizard shrinks it to leave room for the controls below. `Playing` has no hero
+/// rect — the 3D fills the window. Shared by [`hero_overlay`] (the Bone frame) and
+/// `render::update_camera_viewport` (the real camera viewport) so they line up.
+pub const HERO_INTRO: [f32; 4] = [0.22, 0.10, 0.56, 0.34];
+pub const HERO_SETUP: [f32; 4] = [0.30, 0.07, 0.40, 0.22];
+
+/// The hero viewport rectangle for `screen`, or `None` for full-window (Playing).
+pub fn hero_rect(screen: AppScreen) -> Option<[f32; 4]> {
+    match screen {
+        AppScreen::Intro => Some(HERO_INTRO),
+        AppScreen::Setup => Some(HERO_SETUP),
+        AppScreen::Playing => None,
+    }
+}
+
 /// Build the standard front-of-house overlay: a transparent full-screen root
-/// carrying `root_marker`, a Bone top strip, a hero band whose centre is a framed
-/// transparent rectangle (the live screensaver shows through), and an opaque Bone
-/// content panel filling the rest. Returns the content-panel entity for the
-/// caller to fill. `band_pct` sizes the hero band; `justify` lays out the panel's
-/// children along its main (vertical) axis.
+/// carrying `root_marker`, opaque Bone panels framing the hero rectangle on every
+/// side (so nothing but the hero shows the 3D), a hairline frame around the hero,
+/// and the bottom Bone content panel returned for the caller to fill. `frac` is
+/// the hero rectangle (`[left, top, width, height]` fractions, matching the camera
+/// viewport); `justify` lays out the panel's children along its vertical axis.
 pub fn hero_overlay(
     commands: &mut Commands,
     root_marker: impl Bundle,
-    band_pct: f32,
+    frac: [f32; 4],
     justify: JustifyContent,
 ) -> Entity {
+    let [left, top, width, height] = frac;
+    let left_pct = left * 100.0;
+    let top_pct = top * 100.0;
+    let w_pct = width * 100.0;
+    let h_pct = height * 100.0;
+    let right_pct = (100.0 - left_pct - w_pct).max(0.0);
+    let bottom_start = top_pct + h_pct;
+
     let root = commands
         .spawn((
             Node {
@@ -192,7 +221,6 @@ pub fn hero_overlay(
                 left: Val::Px(0.0),
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
                 ..default()
             },
             // Sit above the screensaver's endgame ceremony UI, which the running
@@ -202,61 +230,75 @@ pub fn hero_overlay(
         ))
         .id();
 
-    // Bone margin above the hero.
+    // Opaque Bone bar above the hero.
     node(
         commands,
         root,
         Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(0.0),
+            left: Val::Px(0.0),
             width: Val::Percent(100.0),
-            height: Val::Percent(6.0),
+            height: Val::Percent(top_pct),
             ..default()
         },
         palette::BONE_SRGB,
     );
-
-    // Hero band: Bone fillers around a framed transparent rectangle.
-    let band = container(
-        commands,
-        root,
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(band_pct),
-            flex_direction: FlexDirection::Row,
-            ..default()
-        },
-    );
-    let filler = |commands: &mut Commands| {
-        node(
-            commands,
-            band,
-            Node {
-                flex_grow: 1.0,
-                height: Val::Percent(100.0),
-                ..default()
-            },
-            palette::BONE_SRGB,
-        );
-    };
-    filler(commands);
-    commands.spawn((
-        Node {
-            width: Val::Percent(50.0),
-            height: Val::Percent(100.0),
-            border: UiRect::all(Val::Px(1.5)),
-            ..default()
-        },
-        BorderColor::all(palette::STONE_SRGB),
-        ChildOf(band),
-    ));
-    filler(commands);
-
-    // Opaque Bone content panel filling the rest.
+    // Opaque Bone bar to the left of the hero.
     node(
         commands,
         root,
         Node {
+            position_type: PositionType::Absolute,
+            top: Val::Percent(top_pct),
+            left: Val::Px(0.0),
+            width: Val::Percent(left_pct),
+            height: Val::Percent(h_pct),
+            ..default()
+        },
+        palette::BONE_SRGB,
+    );
+    // Opaque Bone bar to the right of the hero.
+    node(
+        commands,
+        root,
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Percent(top_pct),
+            right: Val::Px(0.0),
+            width: Val::Percent(right_pct),
+            height: Val::Percent(h_pct),
+            ..default()
+        },
+        palette::BONE_SRGB,
+    );
+    // Hairline frame around the (transparent) hero rectangle — interior left empty
+    // so the camera-viewport 3D shows through.
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Percent(top_pct),
+            left: Val::Percent(left_pct),
+            width: Val::Percent(w_pct),
+            height: Val::Percent(h_pct),
+            border: UiRect::all(Val::Px(1.5)),
+            ..default()
+        },
+        BorderColor::all(palette::STONE_SRGB),
+        ChildOf(root),
+    ));
+
+    // Opaque Bone content panel filling everything below the hero; returned to the
+    // caller to fill with text and controls.
+    node(
+        commands,
+        root,
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Percent(bottom_start),
+            left: Val::Px(0.0),
             width: Val::Percent(100.0),
-            flex_grow: 1.0,
+            height: Val::Percent((100.0 - bottom_start).max(0.0)),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
             justify_content: justify,

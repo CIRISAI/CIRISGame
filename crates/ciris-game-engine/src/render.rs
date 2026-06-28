@@ -15,14 +15,16 @@
 //! file owns geometry sizing, the entity table, and the sync.
 
 use bevy::camera::visibility::RenderLayers;
-use bevy::camera::Hdr;
+use bevy::camera::{Hdr, Viewport};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
+use crate::state::AppScreen;
 use crate::{
-    effects, endgame, environment, geometry, i18n, intro, lighting, materials, mist, palette,
+    effects, endgame, environment, geometry, i18n, intro, lighting, materials, mist, palette, pipe,
     screensaver, state, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
@@ -102,62 +104,119 @@ pub(crate) struct Transitions {
 
 /// Build the App and run it (windowed / wasm).
 pub fn run_app() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "CIRISGame".into(),
-                // wasm: bind to the <canvas id="bevy"> in the page shim and let
-                // it track the parent element (DESIGN_BRIEF §6.5).
-                canvas: Some("#bevy".into()),
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
-                ..default()
-            }),
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "CIRISGame".into(),
+            // wasm: bind to the <canvas id="bevy"> in the page shim and let
+            // it track the parent element (DESIGN_BRIEF §6.5).
+            canvas: Some("#bevy".into()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
             ..default()
-        }))
-        .add_plugins(PanOrbitCameraPlugin)
-        .add_plugins(mist::plugin)
-        // Front-of-house: the Intro → Setup → Playing state machine (`state.rs`),
-        // the click-through intro (`intro.rs`), and the setup wizard (`wizard.rs`).
-        // The screensaver below keeps advancing in every state.
-        .add_plugins((state::plugin, intro::plugin, wizard::plugin))
-        .init_resource::<i18n::Localization>()
-        .insert_resource(ClearColor(palette::BONE_SRGB))
-        .insert_resource(BoardResource(GameState::new(
-            DEFAULT_BOARD_N,
-            seed_from_counter(0),
-        )))
-        .insert_resource(BoardDirty(true))
-        .insert_resource(screensaver::ScreensaverState::new())
-        .insert_resource(screensaver::AiRng::new(0))
-        .init_resource::<endgame::Ending>()
-        .add_systems(Startup, setup)
-        .add_systems(
-            Update,
+        }),
+        ..default()
+    }))
+    .add_plugins(PanOrbitCameraPlugin)
+    .add_plugins(mist::plugin)
+    // Liquid-pigment pipes: the custom `PipeMaterial` + the camera-driven slosh.
+    .add_plugins(pipe::plugin)
+    // Front-of-house: the Intro → Setup → Playing state machine (`state.rs`),
+    // the click-through intro (`intro.rs`), and the setup wizard (`wizard.rs`).
+    // The screensaver below keeps advancing in every state.
+    .add_plugins((state::plugin, intro::plugin, wizard::plugin))
+    .init_resource::<i18n::Localization>()
+    .insert_resource(ClearColor(palette::BONE_SRGB))
+    .insert_resource(BoardResource(GameState::new(
+        DEFAULT_BOARD_N,
+        seed_from_counter(0),
+    )))
+    .insert_resource(BoardDirty(true))
+    .insert_resource(screensaver::ScreensaverState::new())
+    .insert_resource(screensaver::AiRng::new(0))
+    .init_resource::<endgame::Ending>()
+    .add_systems(Startup, setup)
+    .add_systems(
+        Update,
+        (
+            bake_gs_patterns,
+            // GameState → board entities → effect parameters → endgame, in
+            // order; `clear_board_dirty` runs last so every consumer of
+            // `BoardDirty` (sync_board, sync_effects) sees the same flag.
             (
-                bake_gs_patterns,
-                // GameState → board entities → effect parameters → endgame, in
-                // order; `clear_board_dirty` runs last so every consumer of
-                // `BoardDirty` (sync_board, sync_effects) sees the same flag.
-                (
-                    screensaver::drive,
-                    sync_board,
-                    effects::sync_effects,
-                    endgame::drive_endgame,
-                    clear_board_dirty,
-                )
-                    .chain(),
-                // Per-frame motion reads the parameters above (one-frame latency
-                // on a fresh board is imperceptible at the screensaver cadence).
-                effects::animate_motes,
-                effects::breathe_cores,
-                effects::grow_pipes,
-                mist::animate_mist,
-                // Hover/press feedback for every front-of-house button.
-                ui_theme::button_visuals,
-            ),
-        )
-        .run();
+                screensaver::drive,
+                sync_board,
+                effects::sync_effects,
+                endgame::drive_endgame,
+                clear_board_dirty,
+            )
+                .chain(),
+            // Per-frame motion reads the parameters above (one-frame latency
+            // on a fresh board is imperceptible at the screensaver cadence).
+            effects::animate_motes,
+            effects::breathe_cores,
+            effects::grow_pipes,
+            mist::animate_mist,
+            // Contain the 3D to the hero rect in Intro/Setup, full in Playing.
+            update_camera_viewport,
+            // Hover/press feedback for every front-of-house button.
+            ui_theme::button_visuals,
+        ),
+    );
+
+    // Dev screenshot capture is native-only (see `capture.rs`).
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(crate::capture::plugin);
+
+    app.run();
+}
+
+/// Resize the 3D camera's viewport so the resting hero renders into a contained
+/// sub-rectangle during Intro/Setup (the surrounding window is the Bone overlay
+/// from [`ui_theme::hero_overlay`]) and fills the whole window in Playing. The
+/// hero rectangle fractions are shared with the overlay so the framed Bone border
+/// and the 3D viewport always coincide. Recomputed every frame from the window's
+/// physical size, so it also tracks `WindowResized` and the initial layout.
+fn update_camera_viewport(
+    screen: Res<State<AppScreen>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut camera: Query<&mut Camera, With<Camera3d>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok(mut camera) = camera.single_mut() else {
+        return;
+    };
+    let size = window.physical_size();
+    if size.x == 0 || size.y == 0 {
+        return;
+    }
+
+    let want = ui_theme::hero_rect(*screen.get()).map(|[l, t, w, h]| {
+        let sx = size.x as f32;
+        let sy = size.y as f32;
+        let pos = UVec2::new((l * sx) as u32, (t * sy) as u32);
+        let dim = UVec2::new((w * sx).max(1.0) as u32, (h * sy).max(1.0) as u32);
+        Viewport {
+            physical_position: pos,
+            physical_size: dim,
+            depth: 0.0..1.0,
+        }
+    });
+
+    // `Viewport` isn't `PartialEq`; compare the fields that matter so we don't
+    // mark the camera changed every frame.
+    let changed = match (&camera.viewport, &want) {
+        (None, None) => false,
+        (Some(a), Some(b)) => {
+            a.physical_position != b.physical_position || a.physical_size != b.physical_size
+        }
+        _ => true,
+    };
+    if changed {
+        camera.viewport = want;
+    }
 }
 
 /// World-space center of lattice cell `(i, j, k)` for an `n³` board:
@@ -188,6 +247,12 @@ fn setup(
     // bloom) over one render target for selective core glow.
     commands.spawn((
         Camera3d::default(),
+        // Order 0: clears Bone (within its viewport) and draws the lattice. In
+        // Intro/Setup `update_camera_viewport` shrinks this to the hero rect.
+        Camera {
+            order: 0,
+            ..default()
+        },
         Hdr,
         Tonemapping::AgX,
         Bloom {
@@ -199,6 +264,20 @@ fn setup(
             radius: Some(1.8 * n as f32),
             ..default()
         },
+    ));
+
+    // A separate full-window 2D camera owns the UI so the front-of-house overlays
+    // stay full-screen even while the 3D camera above is shrunk to the hero rect
+    // (Bevy UI is laid out against its camera's viewport). It composites on top of
+    // the 3D (higher order, no clear) and is the default target for every UI node.
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        IsDefaultUiCamera,
     ));
 
     // ── lighting rig + horizon dome (DESIGN_BRIEF §2.2 / §3.8) ───────────

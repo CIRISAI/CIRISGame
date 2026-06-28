@@ -123,30 +123,6 @@ pub fn ghost() -> StandardMaterial {
     }
 }
 
-/// Glass pipe between two face-adjacent same-steward live cells (DESIGN_BRIEF
-/// §3.4). The same Borosilicate lens as the [`glass`] shell, but with the
-/// `attenuation_color` biased 25 % toward the steward pigment so a mesh's pipes
-/// pick up its colour as light passes through them.
-pub fn pipe(steward: Steward) -> StandardMaterial {
-    let slot = steward.slot() as usize;
-    StandardMaterial {
-        base_color: palette::BOROSILICATE_SRGB,
-        specular_transmission: 0.9,
-        ior: 1.50,
-        thickness: 0.10,
-        perceptual_roughness: 0.06,
-        metallic: 0.0,
-        reflectance: 0.45,
-        attenuation_color: mix_linear(
-            palette::BOROSILICATE_LINEAR,
-            palette::STEWARD_LINEAR[slot],
-            0.25,
-        ),
-        attenuation_distance: 1.4,
-        ..default()
-    }
-}
-
 /// Base agent-mote emissive intensity before the §4.9 breath modulation.
 pub const MOTE_EMISSIVE: f32 = 2.4;
 

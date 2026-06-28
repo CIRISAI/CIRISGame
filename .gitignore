@@ -22,6 +22,9 @@ Thumbs.db
 .vscode/
 *.swp
 
+# Dev screenshot capture (capture.rs)
+/screenshots
+
 # Local secrets / scratch
 *.env
 .env.local

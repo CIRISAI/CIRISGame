@@ -196,7 +196,7 @@ fn build_wizard(
     let panel = theme::hero_overlay(
         commands,
         (WizardRoot, DespawnOnExit(AppScreen::Setup)),
-        18.0,
+        theme::HERO_SETUP,
         JustifyContent::FlexStart,
     );
 

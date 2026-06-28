@@ -16,7 +16,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
 use crate::render::{cell_world_pos, BoardDirty, Transitions, BLOOM_LAYER, SHELL_RADIUS};
-use crate::{materials, BoardResource};
+use crate::{materials, pipe, BoardResource};
 use ciris_game_engine_core::{temperature, CellState, Steward, ATARI_SIZE};
 
 /// Glass pipe radius (DESIGN_BRIEF §3.4).
@@ -98,11 +98,13 @@ impl Default for CellAnimEntry {
 #[derive(Resource)]
 pub(crate) struct CellAnim(Vec<CellAnimEntry>);
 
-/// Shared, immutable effect handles built once at startup.
+/// Shared, immutable effect handles built once at startup. The liquid pipe
+/// material is *not* shared — each pipe gets its own [`pipe::PipeMaterial`]
+/// instance in [`sync_effects`] so the gravity fill measures against that pipe's
+/// own world centre and extent.
 #[derive(Resource)]
 pub(crate) struct EffectAssets {
     pipe_mesh: Handle<Mesh>,
-    pipe_mats: [Handle<StandardMaterial>; 4],
 }
 
 /// Dynamic effect entities owned by [`sync_effects`].
@@ -149,12 +151,6 @@ pub(crate) fn setup_effects(
     cores: &[Entity],
 ) {
     let pipe_mesh = meshes.add(Capsule3d::new(PIPE_RADIUS, PIPE_LEN));
-    let pipe_mats = [
-        materials.add(materials::pipe(Steward::Sienna)),
-        materials.add(materials::pipe(Steward::Lapis)),
-        materials.add(materials::pipe(Steward::Verdigris)),
-        materials.add(materials::pipe(Steward::Kaolin)),
-    ];
 
     let mote_mesh = meshes.add(Sphere::new(MOTE_RADIUS).mesh().ico(1).unwrap());
     let ring_mesh = meshes.add(Torus {
@@ -211,10 +207,7 @@ pub(crate) fn setup_effects(
     }
 
     commands.insert_resource(CellAnim(anim));
-    commands.insert_resource(EffectAssets {
-        pipe_mesh,
-        pipe_mats,
-    });
+    commands.insert_resource(EffectAssets { pipe_mesh });
     commands.insert_resource(EffectState {
         pipes: Vec::new(),
         atari_rings,
@@ -230,6 +223,7 @@ pub(crate) fn sync_effects(
     board: Res<BoardResource>,
     transitions: Res<Transitions>,
     assets: Res<EffectAssets>,
+    mut pipe_materials: ResMut<Assets<pipe::PipeMaterial>>,
     mut anim: ResMut<CellAnim>,
     mut state: ResMut<EffectState>,
     mut commands: Commands,
@@ -336,6 +330,7 @@ pub(crate) fn sync_effects(
             }
             let cb = anim.0[nb].center;
             let dir = (cb - ca).normalize();
+            let center = (ca + cb) * 0.5;
             // A pipe touching a freshly-live cell extrudes from nothing; pipes
             // between long-settled cells spawn at full length (§4.6).
             let born = transitions.became_live[idx] || transitions.became_live[nb];
@@ -346,14 +341,18 @@ pub(crate) fn sync_effects(
             };
             let start_len = if born { 0.02 } else { 1.0 };
             let transform = Transform {
-                translation: (ca + cb) * 0.5,
+                translation: center,
                 rotation: Quat::from_rotation_arc(Vec3::Y, dir),
                 scale: Vec3::new(1.0, start_len, 1.0),
             };
+            // The pipe's vertical half-extent (along world up) for the gravity fill:
+            // its length component projected onto Y, plus the tube radius.
+            let half_extent = dir.y.abs() * (PIPE_LEN * 0.5) + PIPE_RADIUS;
+            let material = pipe_materials.add(pipe::material(steward, center, half_extent));
             let pipe = commands
                 .spawn((
                     Mesh3d(assets.pipe_mesh.clone()),
-                    MeshMaterial3d(assets.pipe_mats[steward.slot() as usize].clone()),
+                    MeshMaterial3d(material),
                     transform,
                     PipeBirth(birth),
                 ))

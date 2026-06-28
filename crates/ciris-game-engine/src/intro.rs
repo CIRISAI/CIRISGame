@@ -99,7 +99,7 @@ fn build_intro(commands: &mut Commands, screen: usize, i18n: &Localization, scal
     let panel = theme::hero_overlay(
         commands,
         (IntroRoot, DespawnOnExit(AppScreen::Intro)),
-        40.0,
+        theme::HERO_INTRO,
         JustifyContent::Center,
     );
 
