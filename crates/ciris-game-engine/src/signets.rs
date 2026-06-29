@@ -84,7 +84,7 @@ fn spawn_signets(
             major_radius: 0.62,
             minor_radius: 0.26,
         }),
-        meshes.add(octahedron()),
+        meshes.add(rhombus()),
         meshes.add(mobius()),
     ];
     let mut mats: [Handle<OrbMaterial>; 4] = std::array::from_fn(|_| Handle::default());
@@ -131,49 +131,13 @@ fn update_signets(
     }
 }
 
-/// A flat-shaded octahedron (the "rhombus" / diamond signet), outward normals.
-fn octahedron() -> Mesh {
-    let faces = [
-        [Vec3::Y, Vec3::X, Vec3::Z],
-        [Vec3::Y, Vec3::Z, Vec3::NEG_X],
-        [Vec3::Y, Vec3::NEG_X, Vec3::NEG_Z],
-        [Vec3::Y, Vec3::NEG_Z, Vec3::X],
-        [Vec3::NEG_Y, Vec3::Z, Vec3::X],
-        [Vec3::NEG_Y, Vec3::NEG_X, Vec3::Z],
-        [Vec3::NEG_Y, Vec3::NEG_Z, Vec3::NEG_X],
-        [Vec3::NEG_Y, Vec3::X, Vec3::NEG_Z],
-    ];
-    let mut pos = Vec::new();
-    let mut nrm = Vec::new();
-    let mut uv = Vec::new();
-    let mut idx: Vec<u32> = Vec::new();
-    for f in faces {
-        let centroid = (f[0] + f[1] + f[2]) / 3.0;
-        let mut n = (f[1] - f[0]).cross(f[2] - f[0]).normalize();
-        let flip = n.dot(centroid) < 0.0;
-        if flip {
-            n = -n;
-        }
-        let base = pos.len() as u32;
-        for v in f {
-            pos.push([v.x, v.y, v.z]);
-            nrm.push([n.x, n.y, n.z]);
-            uv.push([0.0, 0.0]);
-        }
-        if flip {
-            idx.extend([base, base + 2, base + 1]);
-        } else {
-            idx.extend([base, base + 1, base + 2]);
-        }
-    }
-    Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, nrm)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv)
-    .with_inserted_indices(Indices::U32(idx))
+/// A real rhombus-shaped extrusion.
+fn rhombus() -> Mesh {
+    // Extrude a 2D rhombus into 3D. The Extrusion places the rhombus on the XY plane
+    // and extrudes it along the Z axis by the given depth. We will use a scale
+    // matching roughly the other shapes (like the toroid with major 0.62).
+    // `Rhombus::new(half_x, half_y)`
+    Mesh::from(Extrusion::new(Rhombus::new(0.6, 0.8), 0.6))
 }
 
 /// A Möbius band (the Kaolin signet), built double-sided (front + back tris) so
