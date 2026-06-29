@@ -88,7 +88,7 @@ mod screensaver;
 mod signets;
 
 #[cfg(feature = "render")]
-mod spikes;
+mod tendrils;
 
 #[cfg(feature = "render")]
 mod state;

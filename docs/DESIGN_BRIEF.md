@@ -88,7 +88,11 @@ Both cameras must be spawned in one tuple to avoid HDR-mismatch issues. Bloom ti
 
 ### 3.1 Lattice geometry (board-size independent)
 
-The lattice is the **rhombic-dodecahedral honeycomb** with simple-cubic world-coordinate placement. Cells sit at integer positions: `cell (i, j, k) ∈ {0..N-1}³ → world pos = (i − (N−1)/2, j − (N−1)/2, k − (N−1)/2)`. Twelve face-neighbors per interior cell; a cell at `(i, j, k)` is face-adjacent to `(i+di, j+dj, k+dk)` where exactly two of `(di, dj, dk)` are `±1` and one is `0`.
+The lattice is the **rhombic-dodecahedral honeycomb = a single FCC lattice**. Cells occupy the **FCC sublattice** of the cubic box: integer positions `(i, j, k) ∈ {0..N-1}³` **with `i + j + k` even** (one parity class), `→ world pos = (i − (N−1)/2, j − (N−1)/2, k − (N−1)/2)`. Twelve face-neighbors per interior cell; a cell at `(i, j, k)` is face-adjacent to `(i+di, j+dj, k+dk)` where exactly two of `(di, dj, dk)` are `±1` and one is `0` — every such displacement changes `i+j+k` by an even amount, so a cell's twelve neighbors are **other FCC cells of the same parity**, and they are its **twelve nearest cells** (√2 away). The skipped odd-parity integer points (distance 1) are **not cells**.
+
+**Why the parity restriction (locked).** Using *all* integer points would make the 12-face-diagonal adjacency split the board into two interleaved, never-connecting parity sub-lattices (each bond preserves `i+j+k` parity), and the visually-nearest cells (axis-aligned) would not be neighbors at all. Restricting to one parity is the actual rhombic-dodecahedral honeycomb (a single FCC lattice): one connected board where adjacency equals nearest-neighbor, so proximity reads true. A direct corollary used downstream: **on a single parity class the two diagonals of any unit face can never both be cells** (they are opposite parities), so two bonds can never cross — see §4.11.
+
+**Boundary liberties (preserved).** The board is a *finite* FCC solid, so it keeps real sides and corners: an interior cell has the full **12** face-neighbors, a box-face cell fewer, a box **corner** cell as few as **3**. Corners and edges therefore have fewer liberties / potential tubes than the interior — a genuine positional feature (a corner stone is hard to grow toward a collapse, but also hard to connect). This is geometric boundary structure, not axis favoritism: the lattice stays isotropic (no preferred axis).
 
 | primitive | value |
 |---|---|
@@ -101,7 +105,17 @@ The lattice is the **rhombic-dodecahedral honeycomb** with simple-cubic world-co
 | **pipe radius** | 0.055 |
 | pipe length (shell-surface to shell-surface) | 0.574 |
 
-Board AABB scales linearly: span = N world units. Default **N = 5** (125 cells). Alternates 3, 4, 6, 7. N = 7 is native-only (mobile browsers may struggle).
+Board AABB scales linearly: span = N world units. The cell count is the number of even-parity points of the `N³` box (the FCC sublattice), **not** `N³`:
+
+| N | FCC cells (`i+j+k` even) |
+|---|---|
+| 3 | 14 |
+| 4 | 32 |
+| **5 (default)** | **63** |
+| 6 | 108 |
+| 7 | 172 |
+
+Default **N = 5 → 63 cells**. Alternates 3, 4, 6, 7. N = 7 is native-only (mobile browsers may struggle).
 
 ### 3.2 Glass marble — `OrbMaterial` (custom shader)
 

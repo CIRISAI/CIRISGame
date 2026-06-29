@@ -123,16 +123,13 @@ pub fn drive(
 /// Apply one Easy-policy move for the current steward. Returns whether the board
 /// changed. Never panics (a rejected move is simply a no-op).
 fn step_ai(gs: &mut GameState, rng: &mut ChaCha8Rng) -> bool {
-    if let Some(coord) = choose_move(gs, rng) {
-        return gs.apply_move(Move::place(coord)).is_ok();
-    }
-    // No legal placement for this steward. Either it's cross-blocked while empties
-    // remain (no-crossing rule, §4.11) → forced pass; or a crater is still owed
-    // (endgame rebuild turn) → resolve it with an auto-layout (coord ignored).
-    if gs.must_pass() {
-        return gs.pass().is_ok();
-    }
-    gs.apply_move(Move::place(Coord::new(0, 0, 0))).is_ok()
+    let mv = match choose_move(gs, rng) {
+        Some(coord) => Move::place(coord),
+        // No placement left — a crater is still owed (endgame rebuild turn):
+        // resolve it with an auto-layout (the placement coord is ignored).
+        None => Move::place(Coord::new(0, 0, 0)),
+    };
+    gs.apply_move(mv).is_ok()
 }
 
 /// Easy policy: a uniformly-random legal cell, but prefer cells that do *not*

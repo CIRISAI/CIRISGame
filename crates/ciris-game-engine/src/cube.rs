@@ -606,14 +606,16 @@ fn apply_tuning(
     }
 
     if let Some(h) = orbs {
-        for handle in h.0.iter().skip(1) {
+        // OrbHandles order: [empty, core×4, tube×4]. Cores take `core_size`;
+        // tubes stay gas-FILLED so every bond reads as a visible glowing
+        // connection (a small clear-glass core would make thin tubes vanish).
+        for (i, handle) in h.0.iter().enumerate().skip(1) {
             if let Some(mut m) = orb_mats.get_mut(handle) {
                 m.params.z = tuning.gas_luma;
                 m.params2.x = tuning.gas_sat;
                 m.params2.y = tuning.prism;
-                // The marble's clear-glass refraction of the world cube.
                 m.glass.x = tuning.glass_ior; // IOR bends the refracted cube
-                m.glass.y = tuning.core_size; // how far the gas core extends out
+                m.glass.y = if i <= 4 { tuning.core_size } else { 1.2 };
                 m.glass.w = tuning.glass_refl * 5.0; // "Reflect" → cube-edge glow
             }
         }

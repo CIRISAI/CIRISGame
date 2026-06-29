@@ -89,39 +89,69 @@ impl Coord {
 }
 
 /// The lattice and its per-cell state.
+///
+/// The cells are the **FCC sublattice** of the `n³` box: only integer points with
+/// `i + j + k` even (DESIGN_BRIEF §1). That is the true rhombic-dodecahedral
+/// honeycomb — one connected lattice whose 12 face-neighbours are a cell's nearest
+/// cells. `coords` maps a linear index → its coordinate; `cubic_to_idx` is the
+/// inverse lookup over the full `n³` box (`-1` where the point is not a cell).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Board {
-    /// Edge length; the board is `n³` cells.
+    /// Bounding-box edge length. The board is the even-parity points of `n³`.
     pub n: u8,
     cells: Vec<CellState>,
+    coords: Vec<Coord>,
+    cubic_to_idx: Vec<i32>,
 }
 
 impl Board {
-    /// An empty `n × n × n` board.
+    /// An empty board: the even-parity (FCC) cells of the `n × n × n` box.
     pub fn new(n: u8) -> Self {
-        let count = (n as usize).pow(3);
+        let nn = n as usize;
+        let mut coords = Vec::new();
+        let mut cubic_to_idx = alloc::vec![-1i32; nn * nn * nn];
+        // Fixed (k, j, i) order → deterministic indices.
+        for k in 0..n {
+            for j in 0..n {
+                for i in 0..n {
+                    if (i as u16 + j as u16 + k as u16).is_multiple_of(2) {
+                        let cubic = i as usize + nn * (j as usize + nn * k as usize);
+                        cubic_to_idx[cubic] = coords.len() as i32;
+                        coords.push(Coord::new(i, j, k));
+                    }
+                }
+            }
+        }
+        let count = coords.len();
         Board {
             n,
             cells: alloc::vec![CellState::Empty; count],
+            coords,
+            cubic_to_idx,
         }
     }
 
-    /// Total cell count (`n³`).
+    /// Total cell count (the even-parity points of `n³`, not `n³`).
     pub fn len(&self) -> usize {
         self.cells.len()
     }
 
-    /// Whether the board has zero cells (never true for `n >= 1`).
+    /// Whether the board has zero cells.
     pub fn is_empty(&self) -> bool {
         self.cells.is_empty()
     }
 
-    /// Linear index for a coordinate, or `None` if out of bounds.
+    /// Linear index for a coordinate, or `None` if it is out of bounds or not an
+    /// FCC cell (odd parity).
     pub fn index(&self, c: Coord) -> Option<usize> {
         let n = self.n;
         if c.i < n && c.j < n && c.k < n {
-            let n = n as usize;
-            Some(c.i as usize + n * (c.j as usize + n * c.k as usize))
+            let nn = n as usize;
+            let cubic = c.i as usize + nn * (c.j as usize + nn * c.k as usize);
+            match self.cubic_to_idx[cubic] {
+                -1 => None,
+                idx => Some(idx as usize),
+            }
         } else {
             None
         }
@@ -129,12 +159,7 @@ impl Board {
 
     /// Coordinate for a linear index. Panics if out of range.
     pub fn coord(&self, idx: usize) -> Coord {
-        let n = self.n as usize;
-        Coord {
-            i: (idx % n) as u8,
-            j: ((idx / n) % n) as u8,
-            k: (idx / (n * n)) as u8,
-        }
+        self.coords[idx]
     }
 
     pub fn get(&self, idx: usize) -> CellState {

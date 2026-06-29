@@ -29,7 +29,7 @@ use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
     attract, cube, effects, endgame, fonts, hover, i18n, intro, lighting, materials, mist,
-    navigation, orb, plasma, screensaver, signets, spikes, state, topology, ui_theme, wizard,
+    navigation, orb, plasma, screensaver, signets, state, tendrils, topology, ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -146,8 +146,8 @@ pub fn run_app() {
     .add_plugins(topology::plugin)
     // The four Steward Signets (E/W/N/S orientation anchors).
     .add_plugins(signets::plugin)
-    // Peer-spike hints (which marbles are adjacent in the current embedding).
-    .add_plugins(spikes::plugin)
+    // Plasma tendrils of light along valid bond positions.
+    .add_plugins(tendrils::plugin)
     // Cursor-attention: hovered cell glows + plasma rushes inward (hover.rs).
     .add_plugins(hover::plugin)
     // Load the §5.1 UI faces so the front-of-house text actually renders.
@@ -287,12 +287,14 @@ pub(crate) fn cell_world_pos(c: Coord, n: u8) -> Vec3 {
     Vec3::new(c.i as f32 - half, c.j as f32 - half, c.k as f32 - half)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mist_materials: ResMut<Assets<mist::MistMaterial>>,
     mut orb_materials: ResMut<Assets<OrbMaterial>>,
+    mut plasma_materials: ResMut<Assets<plasma::PlasmaMaterial>>,
     mut images: ResMut<Assets<Image>>,
     board: Res<BoardResource>,
 ) {
@@ -508,16 +510,20 @@ fn setup(
         &mut meshes,
         &mut materials,
         assets.tube_orb.clone(),
-        n,
-        count,
+        &centers,
         &core,
     );
 
     // Tier-C drama: one hidden per-cell mist volume + material (DESIGN_BRIEF §3.6).
     mist::setup_mist(&mut commands, &mut meshes, &mut mist_materials, &centers);
 
-    // Peer-spike hint pool (12 per cell), oriented each frame for placeable cells.
-    spikes::setup_spikes(&mut commands, &mut meshes, &mut orb_materials, count);
+    // Plasma tendrils of light along every valid bond (placeable adjacency).
+    tendrils::setup_tendrils(
+        &mut commands,
+        &mut meshes,
+        &mut plasma_materials,
+        &board.0.board,
+    );
 
     commands.insert_resource(assets);
     commands.insert_resource(CellEntities { frame, core, ring });

@@ -37,6 +37,13 @@ pub(crate) struct HoverState {
     strength: f32,
 }
 
+impl HoverState {
+    /// `xyz` = focus point, `w` = strength — the plasma `hover` uniform shape.
+    pub(crate) fn focus(&self) -> Vec4 {
+        self.pos.extend(self.strength)
+    }
+}
+
 /// Marker for the single cursor-follow glow light.
 #[derive(Component)]
 struct HoverLight;
@@ -52,16 +59,15 @@ impl Default for SelectGlow {
     }
 }
 
-/// The board cell currently selected (frontmost valid placement under the cursor),
-/// so `spikes.rs` can light the spikes that point at it. `None` when the cursor
-/// isn't over a legal move.
+/// The board cell currently under the cursor (frontmost), so `tendrils.rs` can
+/// show only that cell's bonds. `None` when the cursor isn't over a cell.
 #[derive(Resource, Default)]
-pub(crate) struct SelectedCell(pub Option<usize>);
+pub(crate) struct HoveredCell(pub Option<usize>);
 
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<HoverState>()
         .init_resource::<SelectGlow>()
-        .init_resource::<SelectedCell>()
+        .init_resource::<HoveredCell>()
         .add_systems(Startup, spawn_hover_light)
         .add_systems(Update, update_hover);
 }
@@ -93,7 +99,7 @@ fn update_hover(
     cameras: Query<(&Camera, &GlobalTransform), With<crate::render::MainCam>>,
     orb_handles: Option<Res<OrbHandles>>,
     select_glow: Res<SelectGlow>,
-    mut selected: ResMut<SelectedCell>,
+    mut hovered: ResMut<HoveredCell>,
     mut orbs: ResMut<Assets<OrbMaterial>>,
     mut state: ResMut<HoverState>,
     mut light: Query<(&mut PointLight, &mut Transform), With<HoverLight>>,
@@ -123,15 +129,18 @@ fn update_hover(
         best.map(|(_, idx, c)| (idx, c))
     })();
 
+    // Any cell under the cursor (for the tendril hover hint), even occupied ones.
+    hovered.0 = picked.map(|(idx, _)| idx);
+
     // Limit the cue to VALID moves: only engage when the picked cell is a legal
     // placement for the steward to move (empty + not forbidden by the no-crossing
     // rule). Hovering an occupied / dead / cross-blocked cell shows no cue.
-    let valid: Option<(usize, Vec3)> = picked.filter(|(idx, _)| {
-        let coord = board.0.board.coord(*idx);
-        board.0.current_legal_moves().contains(&coord)
-    });
-    selected.0 = valid.map(|(idx, _)| idx);
-    let target: Option<Vec3> = valid.map(|(_, c)| c);
+    let target: Option<Vec3> = picked
+        .filter(|(idx, _)| {
+            let coord = board.0.board.coord(*idx);
+            board.0.current_legal_moves().contains(&coord)
+        })
+        .map(|(_, c)| c);
 
     // Exponential smoothing toward the target (or toward "off" when none).
     let k = (1.0 - (-time.delta_secs() / TAU).exp()).clamp(0.0, 1.0);

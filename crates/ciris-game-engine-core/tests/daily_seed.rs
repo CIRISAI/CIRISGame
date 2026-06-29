@@ -33,7 +33,7 @@ fn k_in_range_and_slot0_is_easy() {
 #[test]
 fn perma_dead_count_distinct_sorted_inbounds() {
     let n = 5u8;
-    let total = (n as usize).pow(3);
+    let total = ciris_game_engine_core::Board::new(n).len();
     let ds = derive_daily_seed("2026-06-27", n);
 
     assert_eq!(
@@ -83,7 +83,7 @@ fn different_dates_produce_different_board_state_hashes() {
 fn with_perma_dead_places_cells_correctly() {
     use ciris_game_engine_core::CellState;
 
-    let perma = &[0usize, 10, 50, 100, 124];
+    let perma = &[0usize, 10, 30, 50, 62];
     let gs = GameState::with_perma_dead(5, [0u8; 32], perma);
 
     for &idx in perma {
@@ -113,8 +113,8 @@ fn from_daily_seed_places_perma_dead_matching_derive() {
             "index {idx} should be PermaDead per daily seed"
         );
     }
-    // Total empty cells should be n³ minus K perma-dead.
-    let expected_empty = (n as usize).pow(3) - ds.k as usize;
+    // Total empty cells should be the FCC cell count minus K perma-dead.
+    let expected_empty = gs.board.len() - ds.k as usize;
     assert_eq!(gs.board.empty_count(), expected_empty);
 }
 

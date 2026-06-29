@@ -15,7 +15,7 @@ use std::f32::consts::TAU;
 use bevy::prelude::*;
 
 use crate::orb::OrbMaterial;
-use crate::render::{cell_world_pos, BoardDirty, Transitions, SHELL_RADIUS};
+use crate::render::{BoardDirty, Transitions, SHELL_RADIUS};
 use crate::{materials, BoardResource};
 use ciris_game_engine_core::{CellState, Steward, ATARI_SIZE};
 
@@ -138,8 +138,7 @@ pub(crate) fn setup_effects(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     tube_orb: [Handle<OrbMaterial>; 4],
-    n: u8,
-    count: usize,
+    centers: &[Vec3],
     cores: &[Entity],
 ) {
     let pipe_glass_mesh = meshes.add(Capsule3d::new(PIPE_RADIUS, PIPE_LEN));
@@ -150,10 +149,11 @@ pub(crate) fn setup_effects(
     });
     let ring_mat = materials.add(materials::atari_ring());
 
+    let count = centers.len();
     let mut anim = vec![CellAnimEntry::default(); count];
     let mut atari_rings = Vec::with_capacity(count);
     for idx in 0..count {
-        let center = cell_world_pos(coord_of(idx, n), n);
+        let center = centers[idx];
         anim[idx].center = center;
 
         // Tag this cell's core for the breath system.
@@ -335,13 +335,3 @@ fn smoothstep01(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
-/// Linear board index → `Coord`, without borrowing the board (the centre cache is
-/// seeded before the board resource is read in the hot path).
-fn coord_of(idx: usize, n: u8) -> ciris_game_engine_core::Coord {
-    let n = n as usize;
-    ciris_game_engine_core::Coord::new(
-        (idx % n) as u8,
-        ((idx / n) % n) as u8,
-        (idx / (n * n)) as u8,
-    )
-}

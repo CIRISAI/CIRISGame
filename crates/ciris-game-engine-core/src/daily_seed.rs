@@ -67,7 +67,9 @@ pub fn derive_daily_seed(utc_date_iso: &str, board_n: u8) -> DailySeed {
     };
 
     let mut rng = ChaCha8Rng::from_seed(seed_bytes);
-    let total = (board_n as usize).pow(3);
+    // Sample perma-dead from the actual FCC cell count (the even-parity points of
+    // the n³ box), not n³ — indices must be valid board cell indices.
+    let total = crate::board::Board::new(board_n).len();
 
     // 1. Roster: slot 0 = Easy; shuffle slots 1..=3 with Fisher-Yates (2 rng calls).
     let mut roster = [

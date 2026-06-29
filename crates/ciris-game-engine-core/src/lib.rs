@@ -29,7 +29,6 @@
 extern crate alloc;
 
 pub mod board;
-pub mod crossing;
 pub mod daily_seed;
 pub mod dispersal;
 pub mod engine;
@@ -38,7 +37,6 @@ pub mod lattice;
 pub mod temperature;
 
 pub use board::{Board, CellState, Coord, Steward};
-pub use crossing::{is_crossing_illegal, opposite_diagonal};
 pub use daily_seed::{derive_daily_seed, DailySeed, Difficulty};
 pub use dispersal::{algorithm_a, dispersal_counts, validate_layout, Dispersal, LayoutError};
 pub use engine::{GameState, Move, MoveError, MoveRecord, Outcome};
