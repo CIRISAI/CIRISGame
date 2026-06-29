@@ -6,7 +6,7 @@
 //! The lattice topology (which cells are adjacent) never changes; only the
 //! *embedding* — the map from lattice coord `(i,j,k)` to a 3D position — does.
 //! A continuous angular **dial** walks a palindrome ring of stops
-//! `Cube → Sphere → Cylinder → Torus → Möbius → … → Cube`, smoothstep-blended,
+//! `Rhombus → Sphere → Cylinder → Torus → Möbius → … → Rhombus`, smoothstep-blended,
 //! ordered by how much each embedding glues the boundary to itself so adjacent
 //! stops differ minimally. Closure is exact (the ends are the same embedding).
 //! A real **R⁴ isoclinic rotation** (projected to R³, phased to identity at every
@@ -28,7 +28,7 @@ use ciris_game_engine_core::Coord;
 /// The embedding keyframes the dial blends between.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Shape {
-    Cube,
+    Rhombus,
     Sphere,
     Cylinder,
     Torus,
@@ -38,7 +38,7 @@ pub(crate) enum Shape {
 impl Shape {
     fn name(self) -> &'static str {
         match self {
-            Shape::Cube => "Cube",
+            Shape::Rhombus => "Rhombus",
             Shape::Sphere => "Sphere",
             Shape::Cylinder => "Cylinder",
             Shape::Torus => "Torus",
@@ -48,10 +48,10 @@ impl Shape {
 }
 
 /// Palindrome ring of stops over the full 360° dial: out
-/// `Cube→Sphere→Cylinder→Torus→Möbius`, back `→Torus→Cylinder→Sphere→(Cube)`.
-/// Eight 45° segments; the wrap 7→0 is `Sphere→Cube`, so closure is exact.
+/// `Rhombus→Sphere→Cylinder→Torus→Möbius`, back `→Torus→Cylinder→Sphere→(Rhombus)`.
+/// Eight 45° segments; the wrap 7→0 is `Sphere→Rhombus`, so closure is exact.
 const STOPS: [Shape; 8] = [
-    Shape::Cube,
+    Shape::Rhombus,
     Shape::Sphere,
     Shape::Cylinder,
     Shape::Torus,
@@ -61,13 +61,13 @@ const STOPS: [Shape; 8] = [
     Shape::Sphere,
 ];
 
-/// The dial position, in radians `[0, TAU)`. 0 = Cube.
+/// The dial position, in radians `[0, TAU)`. 0 = Rhombus.
 #[derive(Resource, Default)]
 pub(crate) struct Topology {
     pub dial: f32,
 }
 
-/// Half-extent of the cube embedding (matches `render::cell_world_pos`).
+/// Half-extent of the rhombus embedding (matches `render::cell_world_pos`).
 const SCALE: f32 = 2.0;
 /// How far cells swing through the 4th axis during a morph (the isoclinic R⁴
 /// flourish). 0 = flat shape-blend only; ~SCALE = a strong four-dimensional swing.
@@ -176,11 +176,11 @@ fn norm(c: Coord, n: u8) -> Vec3 {
 fn embed_one(c: Coord, n: u8, s: Shape) -> Vec3 {
     let p = norm(c, n);
     match s {
-        Shape::Cube => {
+        Shape::Rhombus => {
             let fcc = Vec3::new(p.y + p.z, p.x + p.z, p.x + p.y);
             fcc * SCALE
         }
-        // Round the nested cube-shells into nested sphere-shells (a ball): every
+        // Round the nested rhombus-shells into nested sphere-shells (a ball): every
         // point keeps its Chebyshev radius but moves onto its own direction.
         Shape::Sphere => {
             let cheb = p.x.abs().max(p.y.abs()).max(p.z.abs());
