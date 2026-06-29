@@ -334,4 +334,3 @@ fn smoothstep01(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
 }
-

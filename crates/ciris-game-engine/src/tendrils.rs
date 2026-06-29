@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 
-use crate::hover::{HoveredCell, HoverState};
+use crate::hover::{HoverState, HoveredCell};
 use crate::plasma::PlasmaMaterial;
 use crate::render::BLOOM_LAYER;
 use crate::topology::{embed, PeerDistance, Topology};
@@ -90,8 +90,12 @@ fn position_tendrils(
     mut q: Query<(&mut TendrilEdge, &mut Transform, &mut Visibility)>,
 ) {
     let n = board.0.board.n;
-    let placeable =
-        |idx: usize| matches!(board.0.board.get(idx), CellState::Live(_) | CellState::Empty);
+    let placeable = |idx: usize| {
+        matches!(
+            board.0.board.get(idx),
+            CellState::Live(_) | CellState::Empty
+        )
+    };
     let k = (1.0 - (-time.delta_secs() / FADE_TAU).exp()).clamp(0.0, 1.0);
     for (mut edge, mut tf, mut vis) in &mut q {
         let on = (hovered.0 == Some(edge.a) || hovered.0 == Some(edge.b))

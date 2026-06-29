@@ -176,7 +176,10 @@ fn norm(c: Coord, n: u8) -> Vec3 {
 fn embed_one(c: Coord, n: u8, s: Shape) -> Vec3 {
     let p = norm(c, n);
     match s {
-        Shape::Cube => p * SCALE,
+        Shape::Cube => {
+            let fcc = Vec3::new(p.y + p.z, p.x + p.z, p.x + p.y);
+            fcc * SCALE
+        }
         // Round the nested cube-shells into nested sphere-shells (a ball): every
         // point keeps its Chebyshev radius but moves onto its own direction.
         Shape::Sphere => {
