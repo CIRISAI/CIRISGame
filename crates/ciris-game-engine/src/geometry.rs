@@ -150,3 +150,71 @@ pub fn wireframe_mesh() -> Mesh {
     .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
     .with_inserted_indices(bevy::render::mesh::Indices::U32(indices))
 }
+
+/// Build a solid rhombic-dodecahedron mesh (for use by signets).
+pub fn rhombic_dodecahedron() -> Mesh {
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut normals: Vec<[f32; 3]> = Vec::new();
+    let mut uvs: Vec<[f32; 2]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+
+    // The 12 rhombic faces, defined by indices into VERTICES.
+    // Each face consists of 4 vertices in counter-clockwise order.
+    let faces: [[usize; 4]; 12] = [
+        [10, 0, 8, 1],
+        [5, 10, 1, 13],
+        [4, 10, 5, 9],
+        [10, 4, 12, 0],
+        [3, 8, 2, 11],
+        [13, 3, 11, 7],
+        [9, 7, 11, 6],
+        [2, 12, 6, 11],
+        [8, 0, 12, 2],
+        [13, 1, 8, 3],
+        [6, 12, 4, 9],
+        [9, 5, 13, 7],
+    ];
+
+    for face in &faces {
+        let a = Vec3::from(VERTICES[face[0]]);
+        let b = Vec3::from(VERTICES[face[1]]);
+        let c = Vec3::from(VERTICES[face[2]]);
+        let d = Vec3::from(VERTICES[face[3]]);
+
+        let normal = (b - a).cross(c - a).normalize();
+
+        let base_idx = positions.len() as u32;
+
+        positions.push(a.into());
+        positions.push(b.into());
+        positions.push(c.into());
+        positions.push(d.into());
+
+        normals.push(normal.into());
+        normals.push(normal.into());
+        normals.push(normal.into());
+        normals.push(normal.into());
+
+        uvs.push([0.0, 0.0]);
+        uvs.push([1.0, 0.0]);
+        uvs.push([1.0, 1.0]);
+        uvs.push([0.0, 1.0]);
+
+        indices.push(base_idx);
+        indices.push(base_idx + 1);
+        indices.push(base_idx + 2);
+
+        indices.push(base_idx);
+        indices.push(base_idx + 2);
+        indices.push(base_idx + 3);
+    }
+
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(bevy::render::mesh::Indices::U32(indices))
+}

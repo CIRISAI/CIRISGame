@@ -79,7 +79,7 @@ fn spawn_signets(
 ) {
     // Sienna = cube, Lapis = toroid, Verdigris = rhombus, Kaolin = Möbius.
     let shapes = [
-        meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        meshes.add(crate::geometry::rhombic_dodecahedron()),
         meshes.add(Torus {
             major_radius: 0.62,
             minor_radius: 0.26,
