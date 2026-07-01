@@ -328,8 +328,8 @@ fn build_wizard(
     }
 }
 
-/// Step 1: the four steward seats (with dropdown controls) plus the language
-/// selector.
+/// Step 1: language selector first (so it's always in view), then the four
+/// steward seats (with dropdown controls).
 fn build_players(
     commands: &mut Commands,
     ctx: &Ctx,
@@ -348,6 +348,53 @@ fn build_players(
         ),
         palette::INK_SRGB,
     );
+
+    // Language dropdown — placed first so it's visible before the player rows
+    // which may push it below the fold on smaller screens.
+    {
+        let lang_row = setting_row(
+            commands,
+            ctx,
+            body,
+            ctx.i18n.t("wizard-step-language-title"),
+        );
+        let current_lang = ctx.i18n.current_index();
+        let (_, _, english_name) = LANGS[current_lang];
+        theme::button(
+            commands,
+            lang_row,
+            WizAction::ToggleDropdown(OpenDropdown::Lang),
+            english_name.to_string(),
+            theme::SIZE_XS * ctx.scale,
+            theme::BtnSpec::outline(),
+        );
+
+        if open == OpenDropdown::Lang {
+            let grid = theme::container(
+                commands,
+                body,
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    flex_wrap: FlexWrap::Wrap,
+                    justify_content: JustifyContent::Center,
+                    column_gap: Val::Px(4.0),
+                    row_gap: Val::Px(4.0),
+                    ..default()
+                },
+            );
+            for (index, (_, _, english)) in LANGS.iter().enumerate() {
+                option(
+                    commands,
+                    ctx,
+                    grid,
+                    WizAction::SetLang(index),
+                    (*english).to_string(),
+                    index == current_lang,
+                );
+            }
+        }
+    }
 
     #[allow(clippy::needless_range_loop)]
     for slot in 0..4 {
@@ -530,51 +577,6 @@ fn build_players(
                 "(--p".to_string() + &(slot + 1).to_string() + " agent:url)",
                 theme::font(theme::MONO, 8.0 * ctx.scale, FontWeight::NORMAL),
                 palette::STONE_SRGB,
-            );
-        }
-    }
-
-    // Language dropdown at the bottom of the players step.
-    let lang_row = setting_row(
-        commands,
-        ctx,
-        body,
-        ctx.i18n.t("wizard-step-language-title"),
-    );
-    let current_lang = ctx.i18n.current_index();
-    let (_, _, english_name) = LANGS[current_lang];
-    theme::button(
-        commands,
-        lang_row,
-        WizAction::ToggleDropdown(OpenDropdown::Lang),
-        english_name.to_string(),
-        theme::SIZE_XS * ctx.scale,
-        theme::BtnSpec::outline(),
-    );
-
-    // Language option grid (shown when open).
-    if open == OpenDropdown::Lang {
-        let grid = theme::container(
-            commands,
-            body,
-            Node {
-                width: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                flex_wrap: FlexWrap::Wrap,
-                justify_content: JustifyContent::Center,
-                column_gap: Val::Px(4.0),
-                row_gap: Val::Px(4.0),
-                ..default()
-            },
-        );
-        for (index, (_, _, english)) in LANGS.iter().enumerate() {
-            option(
-                commands,
-                ctx,
-                grid,
-                WizAction::SetLang(index),
-                (*english).to_string(),
-                index == current_lang,
             );
         }
     }

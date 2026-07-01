@@ -58,6 +58,9 @@ mod gameplay;
 mod hover;
 
 #[cfg(feature = "render")]
+mod lang_hud;
+
+#[cfg(feature = "render")]
 mod i18n;
 
 #[cfg(feature = "render")]

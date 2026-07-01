@@ -27,9 +27,9 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
-    attract, cube, effects, endgame, fonts, gameplay, hover, i18n, intro, lighting, materials,
-    mist, navigation, orb, plasma, screensaver, signets, state, tendrils, topology, ui_theme,
-    wizard,
+    attract, cube, effects, endgame, fonts, gameplay, hover, i18n, intro, lang_hud, lighting,
+    materials, mist, navigation, orb, plasma, screensaver, signets, state, tendrils, topology,
+    ui_theme, wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -161,6 +161,7 @@ pub fn run_app() {
         intro::plugin,
         wizard::plugin,
         gameplay::plugin,
+        lang_hud::plugin,
     ))
     .init_resource::<i18n::Localization>()
     .insert_resource(ClearColor(Color::BLACK))

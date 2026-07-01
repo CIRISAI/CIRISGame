@@ -69,12 +69,13 @@ fn lang_for_seq(seq: u32) -> usize {
 }
 
 /// The label to show on the attract button for LANGS index `idx`.
-/// English → localized "Play Now"; other languages → their own endonym.
+/// English → "Play Now"; others → the English name of that language, since
+/// Inter.ttf only covers Latin/Cyrillic and non-Latin scripts render as TOFU.
 fn play_now_label(idx: usize) -> &'static str {
     if idx == 0 {
         "Play Now"
     } else {
-        LANGS[idx].1 // endonym in native script (e.g. "Español", "Français")
+        LANGS[idx].2 // English name: always legible with the bundled font
     }
 }
 
