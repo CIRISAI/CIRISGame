@@ -65,15 +65,16 @@ fn max_component(board: &Board, cells: &[usize]) -> usize {
 fn neighbor_counts() {
     let board = Board::new(5);
     let interior = board.index(Coord::new(2, 2, 2)).unwrap();
-    assert_eq!(board.neighbors(interior).len(), 12);
+    assert_eq!(board.neighbors(interior).len(), 6);
     let corner = board.index(Coord::new(0, 0, 0)).unwrap();
     assert_eq!(board.neighbors(corner).len(), 3);
 }
 
 #[test]
 fn adjacency_definition() {
-    assert!(is_face_adjacent(Coord::new(0, 0, 0), Coord::new(1, 1, 0)));
-    assert!(!is_face_adjacent(Coord::new(0, 0, 0), Coord::new(1, 0, 0)));
+    // Simple-cubic: adjacent = Manhattan distance 1.
+    assert!(is_face_adjacent(Coord::new(0, 0, 0), Coord::new(1, 0, 0)));
+    assert!(!is_face_adjacent(Coord::new(0, 0, 0), Coord::new(1, 1, 0)));
     assert!(!is_face_adjacent(Coord::new(0, 0, 0), Coord::new(1, 1, 1)));
 }
 

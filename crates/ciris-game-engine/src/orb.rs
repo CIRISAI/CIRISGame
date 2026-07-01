@@ -110,14 +110,15 @@ pub(crate) fn tube_material(steward: Steward) -> OrbMaterial {
     m
 }
 
-/// A tiny clear, slightly-grey glass sphere marking an empty lattice position.
+/// A half-sized clear glass shell marking an empty lattice position — no gas
+/// core so the interior is transparent, reads as "ready to be filled".
 pub(crate) fn empty_material() -> OrbMaterial {
     OrbMaterial {
         color: EMPTY_TINT,
         params: Vec4::new(SWIRL_SPEED, SWIRL_SCALE, EMPTY_GLOW, EMPTY_RIM),
         hover: Vec4::ZERO,
         params2: Vec4::new(1.0, 0.0, 0.0, 0.0),
-        glass: Vec4::new(1.45, 0.45, 0.0, 1.0),
+        glass: Vec4::new(1.45, 0.0, 0.0, 1.0), // y=0 → no gas core, pure clear glass
     }
 }
 

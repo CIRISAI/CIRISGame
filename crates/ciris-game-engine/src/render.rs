@@ -418,7 +418,7 @@ fn setup(
     let assets = RenderAssets {
         shell_mesh: meshes.add(Sphere::new(SHELL_RADIUS).mesh().ico(4).unwrap()),
         // Tiny empty-position marker sphere (half the previous size).
-        dot_mesh: meshes.add(Sphere::new(0.06).mesh().ico(3).unwrap()),
+        dot_mesh: meshes.add(Sphere::new(SHELL_RADIUS * 0.5).mesh().ico(4).unwrap()),
         core_mesh: meshes.add(Sphere::new(CORE_RADIUS).mesh().uv(48, 32)),
         ring_mesh: meshes.add(
             Sphere::new(CORE_RADIUS * materials::KAOLIN_RING_SCALE)

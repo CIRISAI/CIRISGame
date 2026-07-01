@@ -98,7 +98,6 @@ fn update_hover(
     cameras: Query<(&Camera, &GlobalTransform), With<crate::render::MainCam>>,
     orb_handles: Option<Res<OrbHandles>>,
     select_glow: Res<SelectGlow>,
-    topo: Res<crate::topology::Topology>,
     peer: Res<crate::topology::PeerDistance>,
     mut hovered: ResMut<HoveredCell>,
     mut orbs: ResMut<Assets<OrbMaterial>>,
@@ -117,7 +116,7 @@ fn update_hover(
 
         let mut best: Option<(f32, usize, Vec3)> = None; // (t along ray, idx, center)
         for idx in 0..board.0.board.len() {
-            let center = crate::topology::embed(board.0.board.coord(idx), n, &topo) * peer.0;
+            let center = crate::topology::cell_pos(board.0.board.coord(idx), n) * peer.0;
             let t = (center - ray.origin).dot(dir);
             if t <= 0.0 {
                 continue;

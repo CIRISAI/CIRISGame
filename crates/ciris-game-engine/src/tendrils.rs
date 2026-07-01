@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use crate::hover::{HoverState, HoveredCell};
 use crate::plasma::PlasmaMaterial;
 use crate::render::BLOOM_LAYER;
-use crate::topology::{embed, PeerDistance, Topology};
+use crate::topology::{cell_pos, PeerDistance};
 use crate::BoardResource;
 use ciris_game_engine_core::{Board, CellState};
 
@@ -84,7 +84,6 @@ pub(crate) fn setup_tendrils(
 fn position_tendrils(
     time: Res<Time>,
     board: Res<BoardResource>,
-    topo: Res<Topology>,
     peer: Res<PeerDistance>,
     hovered: Res<HoveredCell>,
     mut q: Query<(&mut TendrilEdge, &mut Transform, &mut Visibility)>,
@@ -109,8 +108,8 @@ fn position_tendrils(
             }
             continue;
         }
-        let ea = embed(board.0.board.coord(edge.a), n, &topo) * peer.0;
-        let eb = embed(board.0.board.coord(edge.b), n, &topo) * peer.0;
+        let ea = cell_pos(board.0.board.coord(edge.a), n) * peer.0;
+        let eb = cell_pos(board.0.board.coord(edge.b), n) * peer.0;
         let dir = eb - ea;
         let len = dir.length().max(1.0e-4);
         tf.translation = (ea + eb) * 0.5;
