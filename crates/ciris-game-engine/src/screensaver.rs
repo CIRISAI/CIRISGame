@@ -7,8 +7,9 @@ use bevy::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
 
+use crate::agent::{dispatch_agent_move, PendingAgentTask};
 use crate::render::BoardDirty;
-use crate::state::{AppScreen, PlayerKind, RosterConfig};
+use crate::state::{AppScreen, PlayerKind, RosterConfig, SlotViewOpts};
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{
     Board, CellState, Coord, GameState, Move, Steward, COLLAPSE_THRESHOLD, DEFAULT_BOARD_N,
@@ -87,10 +88,12 @@ pub fn drive(
     time: Res<Time>,
     screen: Res<State<AppScreen>>,
     roster: Res<RosterConfig>,
+    slot_opts: Res<SlotViewOpts>,
     mut state: ResMut<ScreensaverState>,
     mut board: ResMut<BoardResource>,
     mut rng: ResMut<AiRng>,
     mut dirty: ResMut<BoardDirty>,
+    mut agent_task: ResMut<PendingAgentTask>,
 ) {
     let dt = time.delta();
 
@@ -124,7 +127,18 @@ pub fn drive(
                 return;
             }
         }
-        if step_ai(&mut board.0, &mut rng.0) {
+        let slot = board.0.current_steward().slot() as usize;
+        let kind = roster.slots[slot].kind;
+        if kind == PlayerKind::Agent {
+            dispatch_agent_move(
+                &board.0,
+                slot,
+                &roster.slots[slot].endpoint_url,
+                &slot_opts.0[slot],
+                &mut agent_task,
+            );
+            // Result applied by poll_agent_task each frame — don't set dirty here.
+        } else if step_ai(&mut board.0, &mut rng.0) {
             dirty.0 = true;
         }
     }

@@ -8,6 +8,7 @@ description = "Deterministic no_std core for CIRISGame: rhombic-dodecahedral lat
 
 [dependencies]
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
 rand_chacha = { version = "0.3", default-features = false }
 rand_core = { version = "0.6", default-features = false }
 sha2 = { version = "0.10", default-features = false }
@@ -23,3 +24,5 @@ required-features = ["std"]
 default = []
 # `std` is opt-in for hosts that want it; the crate is no_std + alloc otherwise.
 std = ["serde/std", "sha2/std", "arrayvec/std"]
+# `json` enables BoardView::to_json() via serde_json (alloc-only, no std needed).
+json = ["dep:serde_json"]

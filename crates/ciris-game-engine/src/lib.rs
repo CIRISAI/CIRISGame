@@ -85,6 +85,9 @@ mod plasma;
 mod render;
 
 #[cfg(feature = "render")]
+mod agent;
+
+#[cfg(feature = "render")]
 mod screensaver;
 
 #[cfg(feature = "render")]

@@ -13,7 +13,7 @@
 //! delivery rather than §6.7 accessibility — same [`ViewConfig`], two labelings.
 
 use bevy::prelude::*;
-use ciris_game_engine_core::Difficulty;
+use ciris_game_engine_core::{AgentViewOpts, Difficulty};
 
 /// The front-of-house screens. Default is [`AppScreen::Attract`] — the live
 /// screensaver with a single "Play Now" button; clicking it opens the overlay.
@@ -104,11 +104,15 @@ pub enum PlayerKind {
 }
 
 /// One steward seat's configuration.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SlotConfig {
     pub kind: PlayerKind,
     /// Active only when `kind == Computer`; otherwise carried but unused.
     pub difficulty: Difficulty,
+    /// HTTP endpoint for `kind == Agent`. Game POSTs `BoardView` JSON here.
+    /// Format: `http://host:port` — the engine appends `/move`.
+    /// Set at launch via `--p{n} agent:http://host:port`; not editable in-game yet.
+    pub endpoint_url: String,
 }
 
 /// The four-seat roster the wizard assembles and hands to gameplay.
@@ -132,23 +136,73 @@ impl RosterConfig {
                 SlotConfig {
                     kind: seat0,
                     difficulty: Difficulty::Easy,
+                    endpoint_url: "http://localhost:9000".to_string(),
                 },
                 SlotConfig {
                     kind: PlayerKind::Computer,
                     difficulty: Difficulty::Medium,
+                    endpoint_url: "http://localhost:9001".to_string(),
                 },
                 SlotConfig {
                     kind: PlayerKind::Computer,
                     difficulty: Difficulty::Hard,
+                    endpoint_url: "http://localhost:9002".to_string(),
                 },
                 SlotConfig {
                     kind: PlayerKind::Computer,
                     difficulty: Difficulty::Easy,
+                    endpoint_url: "http://localhost:9003".to_string(),
                 },
             ],
         }
     }
+
+    /// Parse `--p1 human`, `--p2 agent:http://...`, `--p3 computer:hard`, etc.
+    /// from `std::env::args()` and return an overridden roster.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn from_cli_args(mode: AppMode) -> Self {
+        let mut roster = Self::default_for(mode);
+        let args: Vec<String> = std::env::args().collect();
+        for i in 0..args.len().saturating_sub(1) {
+            let flag = &args[i];
+            let slot_idx = match flag.as_str() {
+                "--p1" => Some(0usize),
+                "--p2" => Some(1),
+                "--p3" => Some(2),
+                "--p4" => Some(3),
+                _ => None,
+            };
+            if let Some(slot) = slot_idx {
+                let val = &args[i + 1];
+                if val == "human" {
+                    roster.slots[slot].kind = PlayerKind::Human;
+                } else if val == "computer" {
+                    roster.slots[slot].kind = PlayerKind::Computer;
+                } else if let Some(rest) = val.strip_prefix("computer:") {
+                    roster.slots[slot].kind = PlayerKind::Computer;
+                    roster.slots[slot].difficulty = match rest {
+                        "easy" => Difficulty::Easy,
+                        "medium" => Difficulty::Medium,
+                        "hard" => Difficulty::Hard,
+                        "brutal" => Difficulty::Brutal,
+                        _ => Difficulty::Easy,
+                    };
+                } else if let Some(url) = val.strip_prefix("agent:") {
+                    roster.slots[slot].kind = PlayerKind::Agent;
+                    roster.slots[slot].endpoint_url = url.to_string();
+                } else if val == "agent" {
+                    roster.slots[slot].kind = PlayerKind::Agent;
+                }
+            }
+        }
+        roster
+    }
 }
+
+/// Per-slot agent view preferences. Populated from the agent's `view_opts` response
+/// field; the game uses them to build the *next* POST body for that slot.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct SlotViewOpts(pub [AgentViewOpts; 4]);
 
 /// BoardView delivery format (DESIGN_BRIEF §7.2–§7.4). For humans this same field
 /// chooses the §6.7 flat top-down / 2D alternate (Ascii) vs. the full 3D view.
@@ -249,6 +303,10 @@ pub const SIZES: [u32; 4] = [96, 128, 192, 256];
 /// detected launch mode. Added by `render.rs` before the UI plugins.
 pub fn plugin(app: &mut App) {
     let mode = detect_mode();
+    #[cfg(not(target_arch = "wasm32"))]
+    let roster = RosterConfig::from_cli_args(mode);
+    #[cfg(target_arch = "wasm32")]
+    let roster = RosterConfig::default_for(mode);
     // A `--screensaver` launch drops straight onto the clean ambient board;
     // otherwise land on Attract (screensaver + a "Play Now" button).
     let start = if detect_screensaver() {
@@ -258,8 +316,9 @@ pub fn plugin(app: &mut App) {
     };
     app.insert_state(start)
         .insert_resource(mode)
-        .insert_resource(RosterConfig::default_for(mode))
+        .insert_resource(roster)
         .insert_resource(ViewConfig::default())
+        .insert_resource(SlotViewOpts::default())
         .add_systems(Update, skip_to_game);
 }
 

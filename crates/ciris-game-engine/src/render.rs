@@ -171,6 +171,7 @@ pub fn run_app() {
     .insert_resource(BoardDirty(true))
     .insert_resource(screensaver::ScreensaverState::new())
     .insert_resource(screensaver::AiRng::new(0))
+    .init_resource::<crate::agent::PendingAgentTask>()
     .init_resource::<effects::CoreScale>()
     .init_resource::<endgame::Ending>()
     .add_systems(Startup, setup)
@@ -182,6 +183,7 @@ pub fn run_app() {
             // `BoardDirty` (sync_board, sync_effects) sees the same flag.
             (
                 screensaver::drive,
+                crate::agent::poll_agent_task,
                 sync_board,
                 effects::sync_effects,
                 endgame::drive_endgame,

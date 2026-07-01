@@ -419,6 +419,36 @@ fn build_players(commands: &mut Commands, ctx: &Ctx, body: Entity, roster: &Rost
                 );
             }
         }
+        if roster.slots[slot].kind == PlayerKind::Agent {
+            // Show endpoint URL as a read-only mono label.
+            // Full text editing requires a Bevy TextInput widget (planned).
+            let url_row = theme::container(
+                commands,
+                right,
+                Node {
+                    flex_direction: theme::row(ctx.rtl),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(4.0),
+                    ..default()
+                },
+            );
+            theme::text(
+                commands,
+                url_row,
+                roster.slots[slot].endpoint_url.clone(),
+                theme::font(theme::MONO, theme::SIZE_XS * ctx.scale, FontWeight::NORMAL),
+                palette::STONE_SRGB,
+            );
+            theme::text(
+                commands,
+                url_row,
+                "(--p".to_string()
+                    + &(slot + 1).to_string()
+                    + " agent:url)",
+                theme::font(theme::MONO, 8.0 * ctx.scale, FontWeight::NORMAL),
+                palette::STONE_SRGB,
+            );
+        }
     }
 }
 

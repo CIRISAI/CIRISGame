@@ -28,7 +28,7 @@ name = "ciris-game"
 path = "src/main.rs"
 
 [dependencies]
-ciris-game-engine-core = { path = "../ciris-game-engine-core" }
+ciris-game-engine-core = { path = "../ciris-game-engine-core", features = ["json"] }
 bevy = { version = "0.19", default-features = false }
 bevy_panorbit_camera = { version = "0.35", optional = true }
 # Deterministic AI RNG for the screensaver driver. Versions match the core crate
@@ -50,6 +50,7 @@ default = ["native"]
 # texture/post passthroughs the brief always ships with (§1).
 native = [
     "render",
+    "agent",
     "bevy/multi_threaded",
     "bevy/x11",
     "bevy/wayland",
@@ -57,6 +58,9 @@ native = [
     "bloom",
     "pbr_transmission_textures",
 ]
+
+# Agent HTTP client feature: ureq + image + base64 + serde (native only).
+agent = ["dep:ureq", "dep:image", "dep:base64", "dep:serde", "dep:serde_json"]
 
 # Shared render machinery. Everything GPU-facing is gated on this feature so that
 # `headless` links none of it. Pulls in the panorbit camera dependency too.
@@ -112,3 +116,12 @@ headless = ["bevy/std"]
 # the `CIRISGAME_MODE` env var instead and pulls nothing.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Location"] }
+
+# Native-only: agent HTTP client + PNG grid renderer for multi-modal agents.
+# ureq is sync/blocking (no tokio); image encodes the colored-grid PNG.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { version = "2", features = ["json"], optional = true }
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+base64 = { version = "0.22", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
