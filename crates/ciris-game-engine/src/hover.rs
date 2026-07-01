@@ -143,9 +143,9 @@ fn update_hover(
     // Any cell under the cursor (for the tendril hover hint), even occupied ones.
     hovered.0 = picked.map(|(idx, _)| idx);
 
-    // Limit the cue to VALID moves: only engage when the picked cell is a legal
-    // placement for the steward to move (empty + not forbidden by the no-crossing
-    // rule). Hovering an occupied / dead / cross-blocked cell shows no cue.
+    // Limit the glow cue to valid placements: only empty cells are legal on the
+    // simple-cubic lattice (no crossing rule), so this filter rejects occupied /
+    // dead cells.
     let target: Option<Vec3> = picked
         .filter(|(idx, _)| {
             let coord = board.0.board.coord(*idx);

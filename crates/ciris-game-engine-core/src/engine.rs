@@ -193,15 +193,16 @@ impl GameState {
             .map(|cells| cells.iter().map(|&i| self.board.coord(i)).collect())
     }
 
-    /// The game ends when the board is saturated with no crater pending. (On the
-    /// single FCC lattice every empty cell is always placeable — two bonds can
-    /// never cross, DESIGN_BRIEF §1/§4.11 — so there is no deadlock or pass.)
+    /// The game ends when the board is saturated with no crater pending. On the
+    /// simple-cubic 5×5×5 lattice every empty cell is always a legal placement —
+    /// axis-aligned bonds can never geometrically cross a shared face, so no
+    /// forced pass or deadlock can occur.
     pub fn is_over(&self) -> bool {
         self.board.empty_count() == 0 && !self.has_pending_dispersal()
     }
 
-    /// All empty placement targets, ascending by linear index. Every empty cell is
-    /// legal for every steward (no colour-dependent restriction exists).
+    /// All empty placement targets, ascending by linear index. On the simple-cubic
+    /// lattice every empty cell is legal for every steward.
     pub fn legal_moves(&self) -> Vec<Coord> {
         (0..self.board.len())
             .filter(|&i| self.board.get(i) == CellState::Empty)

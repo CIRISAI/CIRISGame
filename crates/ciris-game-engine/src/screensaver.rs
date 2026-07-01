@@ -147,8 +147,7 @@ fn step_ai(gs: &mut GameState, rng: &mut ChaCha8Rng) -> bool {
 /// when at least one safe legal cell exists. Falls back to any legal cell when
 /// every option would collapse.
 fn choose_move(gs: &GameState, rng: &mut ChaCha8Rng) -> Option<Coord> {
-    // Colour-aware legal moves: empties minus any the no-crossing rule (§4.11)
-    // forbids for the steward to move.
+    // Every empty cell is legal on the simple-cubic lattice (no crossing rule).
     let legal = gs.current_legal_moves();
     if legal.is_empty() {
         return None;
