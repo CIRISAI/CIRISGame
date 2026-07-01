@@ -31,6 +31,7 @@
 
 use bevy::input::gestures::PinchGesture;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
+use bevy::input::touch::Touches;
 use bevy::prelude::*;
 use bevy_panorbit_camera::PanOrbitCamera;
 
@@ -74,21 +75,35 @@ pub(crate) struct NavState {
     target_vel: f32,
 }
 
+/// Tracks the previous frame's two-finger pinch distance so we can compute
+/// a delta for the dolly on touch screens (where PinchGesture doesn't fire).
+#[derive(Resource, Default)]
+struct TouchPinch {
+    prev_dist: Option<f32>,
+}
+
+/// Pixels-of-spread → dolly gain (matches PINCH_GAIN in feel on a phone screen).
+const TOUCH_PINCH_GAIN: f32 = 0.03;
+
 /// Wire the §4.8 fly-through into the app: register [`NavState`] and the two
 /// per-frame systems. Called from `render::run_app`.
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<NavState>()
+        .init_resource::<TouchPinch>()
         .add_systems(Update, (fly_through, update_near_clip));
 }
 
 /// Scroll-up / pinch-in dollies the panorbit rig forward along the view direction
 /// (and past board centre); scroll-down / pinch-out reverses. See module docs.
+#[allow(clippy::too_many_arguments)]
 fn fly_through(
     time: Res<Time>,
     mut wheel: MessageReader<MouseWheel>,
     mut pinch: MessageReader<PinchGesture>,
     buttons: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
+    touches: Res<Touches>,
+    mut touch_pinch: ResMut<TouchPinch>,
     mut nav: ResMut<NavState>,
     mut cam: Query<(&mut PanOrbitCamera, &Transform), With<crate::render::MainCam>>,
 ) {
@@ -118,6 +133,19 @@ fn fly_through(
     // Both-buttons drag: up = forward (screen-space +y is down, so negate).
     if dual {
         scroll += -motion.delta.y * DUAL_MOUSE_GAIN;
+    }
+    // Two-finger touch pinch: compute spread-distance delta as a dolly input.
+    // This runs where PinchGesture doesn't fire (mobile browsers / touch screens).
+    let active: Vec<Vec2> = touches.iter().map(|t| t.position()).collect();
+    if active.len() >= 2 {
+        let dist = active[0].distance(active[1]);
+        if let Some(prev) = touch_pinch.prev_dist {
+            // Pinch-in (spread decreasing) = zoom forward → positive scroll.
+            scroll += (dist - prev) * TOUCH_PINCH_GAIN;
+        }
+        touch_pinch.prev_dist = Some(dist);
+    } else {
+        touch_pinch.prev_dist = None;
     }
 
     let Ok((mut orbit, transform)) = cam.single_mut() else {

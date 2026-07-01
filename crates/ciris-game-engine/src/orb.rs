@@ -39,11 +39,13 @@ const NEON_GLOW: f32 = 2.2;
 /// Fresnel "glass" rim gain — bright wide edge catch so it reads as thick glass.
 const RIM_GAIN: f32 = 3.0;
 
-// ── empty-position marker (tiny clear grey glass) ───────────────────────────
-/// Slight grey tint (linear) for the empty-position spheres.
-const EMPTY_TINT: LinearRgba = LinearRgba::new(0.55, 0.58, 0.62, 0.32);
-const EMPTY_GLOW: f32 = 1.4;
-const EMPTY_RIM: f32 = 2.0;
+// ── empty-position marker (tiny clear glass bead) ───────────────────────────
+/// Near-white glass tint (linear) for the empty-position spheres. Alpha >= 0.999
+/// so the material is Opaque — the spheres render in the opaque pass and write
+/// depth, making them visible from any angle regardless of what's in front.
+const EMPTY_TINT: LinearRgba = LinearRgba::new(0.62, 0.65, 0.70, 1.0);
+const EMPTY_GLOW: f32 = 0.9;
+const EMPTY_RIM: f32 = 2.8;
 
 /// The steward orb material.
 #[derive(Asset, AsBindGroup, TypePath, Clone)]
@@ -110,15 +112,17 @@ pub(crate) fn tube_material(steward: Steward) -> OrbMaterial {
     m
 }
 
-/// A half-sized clear glass shell marking an empty lattice position — no gas
-/// core so the interior is transparent, reads as "ready to be filled".
+/// A half-sized clear glass bead marking an empty lattice position. Opaque
+/// (alpha = 1.0) so it renders in the opaque pass, writes depth, and is always
+/// visible regardless of camera angle or what's in front of it. No gas core
+/// (glass.y = 0) — reads as pure clear glass reflecting the nebula.
 pub(crate) fn empty_material() -> OrbMaterial {
     OrbMaterial {
         color: EMPTY_TINT,
         params: Vec4::new(SWIRL_SPEED, SWIRL_SCALE, EMPTY_GLOW, EMPTY_RIM),
         hover: Vec4::ZERO,
-        params2: Vec4::new(1.0, 0.0, 0.0, 0.0),
-        glass: Vec4::new(1.45, 0.0, 0.0, 1.0), // y=0 → no gas core, pure clear glass
+        params2: Vec4::new(0.5, 0.0, 0.0, 0.0),
+        glass: Vec4::new(1.45, 0.0, 0.0, 1.2), // y=0 → no gas, w=1.2 → bright edge reflection
     }
 }
 

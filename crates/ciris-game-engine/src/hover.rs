@@ -9,10 +9,12 @@
 //! Backend-independent (pure ECS + a uniform write), so it runs identically on
 //! native, WebGPU, and WebGL2.
 
+use bevy::input::touch::Touches;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::orb::{OrbHandles, OrbMaterial};
+use crate::topology::LayerSlicer;
 use crate::BoardResource;
 
 /// Perpendicular ray-distance (world units) within which a cell counts as
@@ -99,6 +101,8 @@ fn update_hover(
     orb_handles: Option<Res<OrbHandles>>,
     select_glow: Res<SelectGlow>,
     peer: Res<crate::topology::PeerDistance>,
+    slicer: Res<LayerSlicer>,
+    touches: Res<Touches>,
     mut hovered: ResMut<HoveredCell>,
     mut orbs: ResMut<Assets<OrbMaterial>>,
     mut state: ResMut<HoverState>,
@@ -107,16 +111,23 @@ fn update_hover(
     let n = board.0.board.n;
 
     // Resolve the cursor → world ray and the frontmost cell it passes through.
+    // Prefer mouse cursor; fall back to first active touch point (mobile).
     let picked: Option<(usize, Vec3)> = (|| {
         let window = windows.single().ok()?;
-        let cursor = window.cursor_position()?;
+        let cursor = window
+            .cursor_position()
+            .or_else(|| touches.iter().next().map(|t| t.position()));
+        let cursor = cursor?;
         let (camera, cam_tf) = cameras.single().ok()?;
         let ray = camera.viewport_to_world(cam_tf, cursor).ok()?;
         let dir = ray.direction.as_vec3();
 
         let mut best: Option<(f32, usize, Vec3)> = None; // (t along ray, idx, center)
         for idx in 0..board.0.board.len() {
-            let center = crate::topology::cell_pos(board.0.board.coord(idx), n) * peer.0;
+            let coord = board.0.board.coord(idx);
+            let mut center = crate::topology::cell_pos(coord, n) * peer.0;
+            // Account for the layer slicer lift so hover tracks visual positions.
+            center.y += crate::topology::lift_y(coord.j, n, slicer.anim) * peer.0;
             let t = (center - ray.origin).dot(dir);
             if t <= 0.0 {
                 continue;

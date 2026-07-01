@@ -150,7 +150,8 @@ pub(crate) fn cell_pos(c: Coord, n: u8) -> Vec3 {
 /// Extra Y offset for layer-slicing: layer `j` smoothly lifts as `anim`
 /// passes through its threshold.  Layer j=n-1 lifts first (at anim=1), then
 /// j=n-2 (anim=2), …, j=1 (anim=4).  Layer j=0 never lifts.
-fn lift_y(j: u8, n: u8, anim: f32) -> f32 {
+/// `pub(crate)` so hover.rs can offset its raycast centers to match visual positions.
+pub(crate) fn lift_y(j: u8, n: u8, anim: f32) -> f32 {
     let threshold = (n as f32 - 1.0) - j as f32;
     let t = (anim - threshold).clamp(0.0, 1.0);
     smooth(t) * GAP
