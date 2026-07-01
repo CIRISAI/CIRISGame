@@ -52,6 +52,9 @@ mod fonts;
 mod geometry;
 
 #[cfg(feature = "render")]
+mod gameplay;
+
+#[cfg(feature = "render")]
 mod hover;
 
 #[cfg(feature = "render")]

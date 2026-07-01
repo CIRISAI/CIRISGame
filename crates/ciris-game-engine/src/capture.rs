@@ -20,10 +20,11 @@ struct CaptureState {
     counter: u32,
 }
 
-/// Register the auto + keypress capture systems.
+/// Register the keypress capture system. F12 takes a screenshot; auto-capture
+/// is disabled (it was useful for CI inspection but is now just noise).
 pub(crate) fn plugin(app: &mut App) {
     app.insert_resource(CaptureState {
-        pending: vec![4.0, 10.0],
+        pending: vec![],
         counter: 0,
     })
     .add_systems(Update, (auto_capture, key_capture));

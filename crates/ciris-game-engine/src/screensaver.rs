@@ -8,6 +8,7 @@ use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
 
 use crate::render::BoardDirty;
+use crate::state::{AppScreen, PlayerKind, RosterConfig};
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{
     Board, CellState, Coord, GameState, Move, Steward, COLLAPSE_THRESHOLD, DEFAULT_BOARD_N,
@@ -84,6 +85,8 @@ fn ai_seed(round: u64) -> [u8; 32] {
 /// per step, and reseeds after the hold.
 pub fn drive(
     time: Res<Time>,
+    screen: Res<State<AppScreen>>,
+    roster: Res<RosterConfig>,
     mut state: ResMut<ScreensaverState>,
     mut board: ResMut<BoardResource>,
     mut rng: ResMut<AiRng>,
@@ -113,6 +116,13 @@ pub fn drive(
             state.hold.reset();
             state.holding = true;
             return;
+        }
+        // In Playing mode, human stewards place their own moves.
+        if *screen.get() == AppScreen::Playing {
+            let slot = board.0.current_steward().slot() as usize;
+            if roster.slots[slot].kind == PlayerKind::Human {
+                return;
+            }
         }
         if step_ai(&mut board.0, &mut rng.0) {
             dirty.0 = true;

@@ -67,6 +67,13 @@ const DUAL_MOUSE_GAIN: f32 = 0.06;
 /// stops, so each scroll burst glides to a halt rather than running forever.
 const COAST_TAU: f32 = 0.18;
 
+/// Half-side of the world starfield cube (side = DEFAULT_BOARD_N * 18.0 for n=5 →
+/// half = 45.0). Clamping the focus to this bound keeps the whole rig inside.
+const WORLD_CUBE_HALF: f32 = 45.0;
+/// Inner bound for focus clamping — a small margin so the camera never clips the
+/// cube wall even when the orbit radius is near its maximum.
+const FOCUS_BOUND: f32 = WORLD_CUBE_HALF - 3.0;
+
 /// Per-camera fly-through state: the smoothed dolly velocity (`vel`, world-units/s
 /// along the view axis) and the input-driven target it eases toward.
 #[derive(Resource, Default)]
@@ -190,8 +197,9 @@ fn fly_through(
     // Transform.forward() points camera → focus (Bevy forward is −Z). Translating
     // the focus along it moves the whole rig forward without disturbing orbit.
     let step = transform.forward().as_vec3() * (nav.vel * dt);
-    orbit.focus += step;
-    orbit.target_focus += step;
+    let bound = Vec3::splat(FOCUS_BOUND);
+    orbit.focus = (orbit.focus + step).clamp(-bound, bound);
+    orbit.target_focus = (orbit.target_focus + step).clamp(-bound, bound);
 }
 
 /// Push the perspective near plane forward while inside the lattice so the cells

@@ -27,8 +27,9 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use crate::orb::OrbMaterial;
 use crate::state::AppScreen;
 use crate::{
-    attract, cube, effects, endgame, fonts, hover, i18n, intro, lighting, materials, mist,
-    navigation, orb, plasma, screensaver, signets, state, tendrils, topology, ui_theme, wizard,
+    attract, cube, effects, endgame, fonts, gameplay, hover, i18n, intro, lighting, materials,
+    mist, navigation, orb, plasma, screensaver, signets, state, tendrils, topology, ui_theme,
+    wizard,
 };
 use crate::{seed_from_counter, BoardResource};
 use ciris_game_engine_core::{CellState, Coord, GameState, Steward, DEFAULT_BOARD_N};
@@ -159,6 +160,7 @@ pub fn run_app() {
         attract::plugin,
         intro::plugin,
         wizard::plugin,
+        gameplay::plugin,
     ))
     .init_resource::<i18n::Localization>()
     .insert_resource(ClearColor(Color::BLACK))
@@ -327,6 +329,9 @@ fn setup(
             // on the cardinal axes), plus a gentle downward tilt.
             yaw: Some(std::f32::consts::FRAC_PI_4),
             pitch: Some(0.35),
+            // World cube side = n*18, half = n*9. Keep the camera inside by
+            // capping orbit radius 2 units inside the wall.
+            zoom_upper_limit: Some(n as f32 * 9.0 - 2.0),
             ..default()
         },
         MainCam,

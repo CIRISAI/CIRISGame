@@ -396,7 +396,7 @@ fn spawn_panel(mut commands: Commands, tuning: Res<Tuning>, open: Res<FamilyOpen
         &mut commands,
         toggle_root,
         PanelToggle,
-        "Tune",
+        "⚙",
         theme::SIZE_SM,
         theme::BtnSpec::outline(),
     );
