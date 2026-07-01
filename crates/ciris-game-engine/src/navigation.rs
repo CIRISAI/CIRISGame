@@ -75,15 +75,21 @@ pub(crate) struct NavState {
     target_vel: f32,
 }
 
-/// Tracks the previous frame's two-finger pinch distance so we can compute
-/// a delta for the dolly on touch screens (where PinchGesture doesn't fire).
+/// Tracks per-frame two-finger touch state for the two dolly gestures:
+/// - **Pinch**: spread-distance change → zoom (finger-apart = dolly back)
+/// - **Two-finger scroll**: average-Y change → zoom (both fingers up = dolly forward)
+///   Works like a trackwheel when both fingers move in the same direction.
 #[derive(Resource, Default)]
 struct TouchPinch {
     prev_dist: Option<f32>,
+    prev_avg_y: Option<f32>,
 }
 
-/// Pixels-of-spread → dolly gain (matches PINCH_GAIN in feel on a phone screen).
+/// Pixels-of-spread-change per frame → dolly gain for pinch.
 const TOUCH_PINCH_GAIN: f32 = 0.03;
+/// Pixels-of-average-Y-change per frame → dolly gain for two-finger scroll.
+/// Screen-up is negative Y in Bevy window coords, so negate to get "up = forward".
+const TOUCH_SCROLL_GAIN: f32 = 0.06;
 
 /// Wire the §4.8 fly-through into the app: register [`NavState`] and the two
 /// per-frame systems. Called from `render::run_app`.
@@ -134,18 +140,31 @@ fn fly_through(
     if dual {
         scroll += -motion.delta.y * DUAL_MOUSE_GAIN;
     }
-    // Two-finger touch pinch: compute spread-distance delta as a dolly input.
-    // This runs where PinchGesture doesn't fire (mobile browsers / touch screens).
-    let active: Vec<Vec2> = touches.iter().map(|t| t.position()).collect();
+    // Two-finger touch gestures (mobile / touch screens, where PinchGesture
+    // doesn't fire). We read two inputs simultaneously from the same two fingers:
+    //
+    //  • Pinch  — spread-distance change.  Fingers apart = dolly back.
+    //  • Scroll — average-Y change.  Both fingers up = dolly forward, like a
+    //             trackwheel.  Negate because Bevy window Y grows downward.
+    let active: Vec<Vec2> = touches.iter().take(2).map(|t| t.position()).collect();
     if active.len() >= 2 {
         let dist = active[0].distance(active[1]);
+        let avg_y = (active[0].y + active[1].y) * 0.5;
+
         if let Some(prev) = touch_pinch.prev_dist {
-            // Pinch-in (spread decreasing) = zoom forward → positive scroll.
             scroll += (dist - prev) * TOUCH_PINCH_GAIN;
         }
+        if let Some(prev_y) = touch_pinch.prev_avg_y {
+            // avg_y increases when fingers move DOWN (screen +Y = down).
+            // Down = dolly back = negative scroll; up = dolly forward = positive.
+            scroll += -(avg_y - prev_y) * TOUCH_SCROLL_GAIN;
+        }
+
         touch_pinch.prev_dist = Some(dist);
+        touch_pinch.prev_avg_y = Some(avg_y);
     } else {
         touch_pinch.prev_dist = None;
+        touch_pinch.prev_avg_y = None;
     }
 
     let Ok((mut orbit, transform)) = cam.single_mut() else {
