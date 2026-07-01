@@ -180,9 +180,7 @@ fn fly_through(
     };
     // Disable panorbit while any UI button is held (e.g. slider drag) so the
     // mouse motion isn't interpreted as an orbit at the same time.
-    let ui_pressed = ui_buttons
-        .iter()
-        .any(|i| *i == Interaction::Pressed);
+    let ui_pressed = ui_buttons.iter().any(|i| *i == Interaction::Pressed);
     // Suppress panorbit's own orbit/pan while both buttons drive the dolly OR
     // while a UI element is being dragged.
     orbit.enabled = !dual && !ui_pressed;

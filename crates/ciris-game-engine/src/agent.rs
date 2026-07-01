@@ -87,7 +87,11 @@ mod inner {
             None
         };
 
-        let post = AgentPost { view, ascii, png_b64 };
+        let post = AgentPost {
+            view,
+            ascii,
+            png_b64,
+        };
         let body = match serde_json::to_string(&post) {
             Ok(s) => s,
             Err(e) => {
@@ -142,7 +146,10 @@ mod inner {
                 Ok(r) => r,
                 Err(mpsc::TryRecvError::Empty) => return,
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    warn!("agent slot {} channel disconnected — forfeiting", pending.slot);
+                    warn!(
+                        "agent slot {} channel disconnected — forfeiting",
+                        pending.slot
+                    );
                     None
                 }
             }
@@ -154,9 +161,14 @@ mod inner {
             .map(|r| {
                 let c = Coord::new(r.mv.coord.i, r.mv.coord.j, r.mv.coord.k);
                 let dispersal = r.mv.dispersal.as_ref().map(|ds| {
-                    ds.iter().map(|d| Coord::new(d.i, d.j, d.k)).collect::<Vec<_>>()
+                    ds.iter()
+                        .map(|d| Coord::new(d.i, d.j, d.k))
+                        .collect::<Vec<_>>()
                 });
-                Move { coord: c, dispersal }
+                Move {
+                    coord: c,
+                    dispersal,
+                }
             })
             .unwrap_or_else(|| {
                 let legal = board.0.current_legal_moves();
@@ -263,10 +275,7 @@ mod inner {
 
         let mut buf: Vec<u8> = Vec::new();
         if image::DynamicImage::ImageRgb8(img)
-            .write_to(
-                &mut std::io::Cursor::new(&mut buf),
-                image::ImageFormat::Png,
-            )
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
             .is_err()
         {
             return String::new();

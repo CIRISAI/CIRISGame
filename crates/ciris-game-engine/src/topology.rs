@@ -204,7 +204,10 @@ fn spawn_controls(mut commands: Commands) {
 
     commands.spawn((
         Text::new("C"),
-        TextFont { font_size: FontSize::Px(11.0), ..default() },
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
         TextColor(Color::srgb(0.55, 0.57, 0.65)),
         ChildOf(panel),
     ));
@@ -245,7 +248,10 @@ fn spawn_controls(mut commands: Commands) {
 
     commands.spawn((
         Text::new("P"),
-        TextFont { font_size: FontSize::Px(11.0), ..default() },
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
         TextColor(Color::srgb(0.82, 0.84, 0.92)),
         ChildOf(panel),
     ));
@@ -302,7 +308,11 @@ fn topo_slider_update(
     } else {
         // Cursor left the track while button held: clamp to nearest end.
         let (_, _, translation) = uitf.to_scale_angle_translation();
-        if cursor.x < translation.x { 0.0 } else { 1.0 }
+        if cursor.x < translation.x {
+            0.0
+        } else {
+            1.0
+        }
     };
     blend.0 = x.clamp(0.0, 1.0);
 }
@@ -310,10 +320,7 @@ fn topo_slider_update(
 /// Move the thumb node's `left` offset to match the current blend each frame.
 /// Clamped to [THUMB_HALF, SLIDER_TRACK_W - THUMB_HALF] so the thumb circle
 /// never overflows the track bar at either extreme.
-fn update_topo_thumb(
-    blend: Res<TopoBlend>,
-    mut q_thumb: Query<&mut Node, With<TopoThumb>>,
-) {
+fn update_topo_thumb(blend: Res<TopoBlend>, mut q_thumb: Query<&mut Node, With<TopoThumb>>) {
     let Ok(mut node) = q_thumb.single_mut() else {
         return;
     };

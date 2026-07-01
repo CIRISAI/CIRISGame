@@ -39,8 +39,8 @@ fn place_on_click(
     mut dirty: ResMut<BoardDirty>,
 ) {
     // Accept left-click or any touch lift (tap).
-    let clicked = buttons.just_pressed(MouseButton::Left)
-        || touches.iter_just_released().next().is_some();
+    let clicked =
+        buttons.just_pressed(MouseButton::Left) || touches.iter_just_released().next().is_some();
     if !clicked {
         return;
     }

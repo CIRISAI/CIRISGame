@@ -1,16 +1,15 @@
 //! The setup wizard (DESIGN_BRIEF §5.4 stewards drawer, §6.3 defaults, §7
-//! BoardView, §6.7/§7.7 accessibility). Three steps over the contained live hero:
+//! BoardView, §6.7/§7.7 accessibility). Two steps over the contained live hero:
 //!
-//! 1. **Players** — the four steward seats, each Human / Computer / Agent, with a
-//!    difficulty sub-control for Computer seats. Defaults come from the launch
-//!    [`AppMode`]: 1 Human (or Agent) + 3 Computer.
+//! 1. **Players + Language** — four steward seats (each Human / Computer / Agent;
+//!    Computer seats get a difficulty sub-dropdown) plus a Language dropdown at
+//!    the bottom. All selectors are inline-expanding dropdowns: tap the current
+//!    value to open the list, tap again (or pick a value) to close.
 //! 2. **View / Accessibility** — *one* [`ViewConfig`] resource presented two ways.
 //!    In agent mode it reads as §7 BoardView delivery (graphics, video, format,
 //!    framerate, size); in human mode it reads as accessibility settings (reduced
 //!    motion, effects quality, flat top-down view, screen-reader, captions,
 //!    contrast, colorblind, text size, mute). Same machinery, two labelings.
-//! 3. **Language** — pick one of the 29 CIRIS languages; the wizard re-renders in
-//!    it immediately.
 //!
 //! The roster and view config are mutated live as the user clicks, so "finish"
 //! is just the transition to [`AppScreen::Playing`]. Like the intro, the whole
@@ -29,7 +28,7 @@ use crate::state::{
 use crate::ui_theme as theme;
 
 /// Number of wizard steps.
-const STEPS: usize = 3;
+const STEPS: usize = 2;
 
 /// Short color names for the steward seats in the wizard and HUD.
 const STEWARD_NAMES: [&str; 4] = ["Red", "Blue", "Green", "White"];
@@ -37,6 +36,20 @@ const STEWARD_NAMES: [&str; 4] = ["Red", "Blue", "Green", "White"];
 /// Which wizard step is showing (`0..STEPS`). Mutating it triggers a rebuild.
 #[derive(Resource)]
 struct WizardStep(usize);
+
+/// Which inline dropdown (if any) is currently open. At most one is open at a
+/// time; opening another auto-closes the previous one.
+#[derive(Resource, Default, PartialEq, Clone, Copy)]
+enum OpenDropdown {
+    #[default]
+    Closed,
+    /// Player-kind picker for slot 0..3.
+    Kind(usize),
+    /// Difficulty picker for slot 0..3 (only for Computer seats).
+    Diff(usize),
+    /// Language selector.
+    Lang,
+}
 
 /// Marks the wizard UI root so the rebuild can despawn the whole tree.
 #[derive(Component)]
@@ -49,9 +62,17 @@ enum WizAction {
     Next,
     /// Finish setup and start the game.
     Start,
+
+    // Dropdowns — toggles the named dropdown open/closed (one at a time).
+    ToggleDropdown(OpenDropdown),
+
     // Step 1 — players.
     SetKind(usize, PlayerKind),
     SetDifficulty(usize, Difficulty),
+
+    // Step 1 — language.
+    SetLang(usize),
+
     // Step 2 — agent framing.
     ToggleGraphics,
     ToggleAnimation,
@@ -68,13 +89,12 @@ enum WizAction {
     ToggleColorblind,
     SetTextScale(TextScale),
     ToggleAudioMute,
-    // Step 3 — language.
-    SetLang(usize),
 }
 
 /// Register the wizard's resources and systems.
 pub fn plugin(app: &mut App) {
     app.insert_resource(WizardStep(0))
+        .insert_resource(OpenDropdown::default())
         .add_systems(OnEnter(AppScreen::Setup), enter_setup)
         .add_systems(
             Update,
@@ -84,9 +104,10 @@ pub fn plugin(app: &mut App) {
         );
 }
 
-/// Reset to the first step on entry (marks the resource changed → first rebuild).
-fn enter_setup(mut step: ResMut<WizardStep>) {
+/// Reset to the first step and close any open dropdown on entry.
+fn enter_setup(mut step: ResMut<WizardStep>, mut open: ResMut<OpenDropdown>) {
     step.0 = 0;
+    *open = OpenDropdown::Closed;
 }
 
 /// Apply a clicked control to the roster / view / language / step / state.
@@ -97,6 +118,7 @@ fn wizard_actions(
     mut roster: ResMut<RosterConfig>,
     mut view: ResMut<ViewConfig>,
     mut i18n: ResMut<Localization>,
+    mut open: ResMut<OpenDropdown>,
     mut next: ResMut<NextState<AppScreen>>,
 ) {
     for (interaction, action) in &actions {
@@ -106,12 +128,23 @@ fn wizard_actions(
         match *action {
             WizAction::Back => step.0 = step.0.saturating_sub(1),
             WizAction::Next => step.0 = (step.0 + 1).min(STEPS - 1),
-            // The roster/view are already live; finishing is just the transition.
             WizAction::Start => next.set(AppScreen::Playing),
 
-            WizAction::SetKind(slot, kind) => roster.slots[slot].kind = kind,
+            WizAction::ToggleDropdown(target) => {
+                *open = if *open == target {
+                    OpenDropdown::Closed
+                } else {
+                    target
+                };
+            }
+
+            WizAction::SetKind(slot, kind) => {
+                roster.slots[slot].kind = kind;
+                *open = OpenDropdown::Closed;
+            }
             WizAction::SetDifficulty(slot, difficulty) => {
-                roster.slots[slot].difficulty = difficulty
+                roster.slots[slot].difficulty = difficulty;
+                *open = OpenDropdown::Closed;
             }
 
             WizAction::ToggleGraphics => view.graphics = !view.graphics,
@@ -129,7 +162,6 @@ fn wizard_actions(
                 view.size = SIZES[(i + 1) % SIZES.len()];
             }
 
-            // Human framing maps onto the same fields, sometimes inverted.
             WizAction::ToggleReducedMotion => view.animation = !view.animation,
             WizAction::SetQuality(quality) => view.quality = quality,
             WizAction::ToggleFlatView => {
@@ -146,12 +178,16 @@ fn wizard_actions(
             WizAction::SetTextScale(scale) => view.text_scale = scale,
             WizAction::ToggleAudioMute => view.audio_muted = !view.audio_muted,
 
-            WizAction::SetLang(index) => i18n.set_lang_index(index),
+            WizAction::SetLang(index) => {
+                i18n.set_lang_index(index);
+                *open = OpenDropdown::Closed;
+            }
         }
     }
 }
 
-/// Rebuild the wizard whenever the step or any edited resource changes.
+/// Rebuild the wizard whenever the step, any edited resource, or the open
+/// dropdown changes.
 #[allow(clippy::too_many_arguments)]
 fn rebuild_wizard(
     step: Res<WizardStep>,
@@ -159,16 +195,22 @@ fn rebuild_wizard(
     view: Res<ViewConfig>,
     i18n: Res<Localization>,
     mode: Res<AppMode>,
+    open: Res<OpenDropdown>,
     roots: Query<Entity, With<WizardRoot>>,
     mut commands: Commands,
 ) {
-    if !(step.is_changed() || roster.is_changed() || view.is_changed() || i18n.is_changed()) {
+    if !(step.is_changed()
+        || roster.is_changed()
+        || view.is_changed()
+        || i18n.is_changed()
+        || open.is_changed())
+    {
         return;
     }
     for root in &roots {
         commands.entity(root).despawn();
     }
-    build_wizard(&mut commands, step.0, &roster, &view, &i18n, *mode);
+    build_wizard(&mut commands, step.0, &roster, &view, &i18n, *mode, *open);
 }
 
 /// Shared per-build context to keep helper signatures short.
@@ -186,6 +228,7 @@ fn build_wizard(
     view: &ViewConfig,
     i18n: &Localization,
     mode: AppMode,
+    open: OpenDropdown,
 ) {
     let ctx = Ctx {
         i18n,
@@ -235,9 +278,8 @@ fn build_wizard(
         },
     );
     match step {
-        0 => build_players(commands, &ctx, body, roster),
-        1 => build_view(commands, &ctx, body, view, mode),
-        _ => build_language(commands, &ctx, body),
+        0 => build_players(commands, &ctx, body, roster, open),
+        _ => build_view(commands, &ctx, body, view, mode),
     }
 
     // Navigation row: Back on the reading-start side, Next/Start on the end.
@@ -263,7 +305,6 @@ fn build_wizard(
             theme::BtnSpec::outline(),
         );
     } else {
-        // Zero-size spacer so SpaceBetween still pins the primary action to the end.
         theme::container(commands, nav, Node::default());
     }
     if step + 1 < STEPS {
@@ -287,8 +328,15 @@ fn build_wizard(
     }
 }
 
-/// Step 1: the four steward seats.
-fn build_players(commands: &mut Commands, ctx: &Ctx, body: Entity, roster: &RosterConfig) {
+/// Step 1: the four steward seats (with dropdown controls) plus the language
+/// selector.
+fn build_players(
+    commands: &mut Commands,
+    ctx: &Ctx,
+    body: Entity,
+    roster: &RosterConfig,
+    open: OpenDropdown,
+) {
     theme::text(
         commands,
         body,
@@ -301,8 +349,6 @@ fn build_players(commands: &mut Commands, ctx: &Ctx, body: Entity, roster: &Rost
         palette::INK_SRGB,
     );
 
-    // `slot` indexes several parallel arrays (names, colours, roster), so a plain
-    // range loop is clearer than enumerate over any one of them.
     #[allow(clippy::needless_range_loop)]
     for slot in 0..4 {
         let row = theme::container(
@@ -312,14 +358,14 @@ fn build_players(commands: &mut Commands, ctx: &Ctx, body: Entity, roster: &Rost
                 width: Val::Percent(100.0),
                 flex_direction: theme::row(ctx.rtl),
                 justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
+                align_items: AlignItems::FlexStart,
                 column_gap: Val::Px(8.0),
-                margin: UiRect::vertical(Val::Px(3.0)),
+                margin: UiRect::vertical(Val::Px(2.0)),
                 ..default()
             },
         );
 
-        // Left: pigment disc + steward name. Kaolin gets its mandatory Ink ring.
+        // Left: pigment disc + steward name.
         let left = theme::container(
             commands,
             row,
@@ -327,6 +373,7 @@ fn build_players(commands: &mut Commands, ctx: &Ctx, body: Entity, roster: &Rost
                 flex_direction: theme::row(ctx.rtl),
                 align_items: AlignItems::Center,
                 column_gap: Val::Px(6.0),
+                padding: UiRect::top(Val::Px(10.0)),
                 ..default()
             },
         );
@@ -358,7 +405,7 @@ fn build_players(commands: &mut Commands, ctx: &Ctx, body: Entity, roster: &Rost
             palette::INK_SRGB,
         );
 
-        // Right: kind segmented control, with a difficulty row for Computer seats.
+        // Right: dropdown controls stacked in a column.
         let right = theme::container(
             commands,
             row,
@@ -373,54 +420,93 @@ fn build_players(commands: &mut Commands, ctx: &Ctx, body: Entity, roster: &Rost
                 ..default()
             },
         );
-        let kinds = theme::container(
+
+        // Kind dropdown button.
+        let kind_open = open == OpenDropdown::Kind(slot);
+        theme::button(
             commands,
             right,
-            Node {
-                flex_direction: theme::row(ctx.rtl),
-                column_gap: Val::Px(4.0),
-                ..default()
-            },
+            WizAction::ToggleDropdown(OpenDropdown::Kind(slot)),
+            ctx.i18n.t(kind_key(roster.slots[slot].kind)),
+            theme::SIZE_XS * ctx.scale,
+            theme::BtnSpec::outline(),
         );
-        for kind in [PlayerKind::Human, PlayerKind::Computer, PlayerKind::Agent] {
-            option(
-                commands,
-                ctx,
-                kinds,
-                WizAction::SetKind(slot, kind),
-                ctx.i18n.t(kind_key(kind)),
-                roster.slots[slot].kind == kind,
-            );
-        }
-        if roster.slots[slot].kind == PlayerKind::Computer {
-            let diffs = theme::container(
+
+        // Kind option list (shown when open).
+        if kind_open {
+            let opts = theme::container(
                 commands,
                 right,
                 Node {
-                    flex_direction: theme::row(ctx.rtl),
-                    column_gap: Val::Px(4.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: if ctx.rtl {
+                        AlignItems::FlexStart
+                    } else {
+                        AlignItems::FlexEnd
+                    },
+                    row_gap: Val::Px(2.0),
                     ..default()
                 },
             );
-            for difficulty in [
-                Difficulty::Easy,
-                Difficulty::Medium,
-                Difficulty::Hard,
-                Difficulty::Brutal,
-            ] {
+            for kind in [PlayerKind::Human, PlayerKind::Computer, PlayerKind::Agent] {
                 option(
                     commands,
                     ctx,
-                    diffs,
-                    WizAction::SetDifficulty(slot, difficulty),
-                    ctx.i18n.t(diff_key(difficulty)),
-                    roster.slots[slot].difficulty == difficulty,
+                    opts,
+                    WizAction::SetKind(slot, kind),
+                    ctx.i18n.t(kind_key(kind)),
+                    roster.slots[slot].kind == kind,
                 );
             }
         }
+
+        // Difficulty dropdown (Computer seats only).
+        if roster.slots[slot].kind == PlayerKind::Computer {
+            let diff_open = open == OpenDropdown::Diff(slot);
+            theme::button(
+                commands,
+                right,
+                WizAction::ToggleDropdown(OpenDropdown::Diff(slot)),
+                ctx.i18n.t(diff_key(roster.slots[slot].difficulty)),
+                theme::SIZE_XS * ctx.scale,
+                theme::BtnSpec::outline(),
+            );
+
+            if diff_open {
+                let opts = theme::container(
+                    commands,
+                    right,
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: if ctx.rtl {
+                            AlignItems::FlexStart
+                        } else {
+                            AlignItems::FlexEnd
+                        },
+                        row_gap: Val::Px(2.0),
+                        ..default()
+                    },
+                );
+                for difficulty in [
+                    Difficulty::Easy,
+                    Difficulty::Medium,
+                    Difficulty::Hard,
+                    Difficulty::Brutal,
+                ] {
+                    option(
+                        commands,
+                        ctx,
+                        opts,
+                        WizAction::SetDifficulty(slot, difficulty),
+                        ctx.i18n.t(diff_key(difficulty)),
+                        roster.slots[slot].difficulty == difficulty,
+                    );
+                }
+            }
+        }
+
+        // Agent endpoint URL (read-only, text-input widget planned).
         if roster.slots[slot].kind == PlayerKind::Agent {
-            // Show endpoint URL as a read-only mono label.
-            // Full text editing requires a Bevy TextInput widget (planned).
             let url_row = theme::container(
                 commands,
                 right,
@@ -441,11 +527,54 @@ fn build_players(commands: &mut Commands, ctx: &Ctx, body: Entity, roster: &Rost
             theme::text(
                 commands,
                 url_row,
-                "(--p".to_string()
-                    + &(slot + 1).to_string()
-                    + " agent:url)",
+                "(--p".to_string() + &(slot + 1).to_string() + " agent:url)",
                 theme::font(theme::MONO, 8.0 * ctx.scale, FontWeight::NORMAL),
                 palette::STONE_SRGB,
+            );
+        }
+    }
+
+    // Language dropdown at the bottom of the players step.
+    let lang_row = setting_row(
+        commands,
+        ctx,
+        body,
+        ctx.i18n.t("wizard-step-language-title"),
+    );
+    let current_lang = ctx.i18n.current_index();
+    let (_, _, english_name) = LANGS[current_lang];
+    theme::button(
+        commands,
+        lang_row,
+        WizAction::ToggleDropdown(OpenDropdown::Lang),
+        english_name.to_string(),
+        theme::SIZE_XS * ctx.scale,
+        theme::BtnSpec::outline(),
+    );
+
+    // Language option grid (shown when open).
+    if open == OpenDropdown::Lang {
+        let grid = theme::container(
+            commands,
+            body,
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                justify_content: JustifyContent::Center,
+                column_gap: Val::Px(4.0),
+                row_gap: Val::Px(4.0),
+                ..default()
+            },
+        );
+        for (index, (_, _, english)) in LANGS.iter().enumerate() {
+            option(
+                commands,
+                ctx,
+                grid,
+                WizAction::SetLang(index),
+                (*english).to_string(),
+                index == current_lang,
             );
         }
     }
@@ -519,7 +648,6 @@ fn build_view(commands: &mut Commands, ctx: &Ctx, body: Entity, view: &ViewConfi
             );
         }
         AppMode::Human => {
-            // Reduced motion is the inverse of delivering animation.
             let c = setting_row(commands, ctx, body, i18n.t("a11y-reduced-motion"));
             toggle(
                 commands,
@@ -541,7 +669,6 @@ fn build_view(commands: &mut Commands, ctx: &Ctx, body: Entity, view: &ViewConfi
                 );
             }
 
-            // Flat top-down view ⇔ the ASCII / 2D delivery format (§6.7).
             let c = setting_row(commands, ctx, body, i18n.t("a11y-flat-view"));
             toggle(
                 commands,
@@ -605,46 +732,6 @@ fn build_view(commands: &mut Commands, ctx: &Ctx, body: Entity, view: &ViewConfi
     }
 }
 
-/// Step 3: the 29-language selector as a wrapped grid of endonym buttons.
-fn build_language(commands: &mut Commands, ctx: &Ctx, body: Entity) {
-    theme::text(
-        commands,
-        body,
-        ctx.i18n.t("wizard-step-language-title"),
-        theme::font(
-            theme::DISPLAY,
-            theme::SIZE_MD * ctx.scale,
-            FontWeight::MEDIUM,
-        ),
-        palette::INK_SRGB,
-    );
-    let grid = theme::container(
-        commands,
-        body,
-        Node {
-            width: Val::Percent(100.0),
-            flex_direction: FlexDirection::Row,
-            flex_wrap: FlexWrap::Wrap,
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(4.0),
-            row_gap: Val::Px(4.0),
-            ..default()
-        },
-    );
-    let current = ctx.i18n.current_index();
-    for (index, (_code, _endonym, english)) in LANGS.iter().enumerate() {
-        option(
-            commands,
-            ctx,
-            grid,
-            WizAction::SetLang(index),
-            (*english).to_string(),
-            index == current,
-        );
-    }
-}
-
 // ── small control helpers ───────────────────────────────────────────────
 
 /// A `label … controls` row; returns the (right-hand) controls container.
@@ -702,7 +789,7 @@ fn toggle(commands: &mut Commands, ctx: &Ctx, controls: Entity, action: WizActio
     );
 }
 
-/// One option in a segmented control; filled when `active`.
+/// One option in a segmented control or open dropdown list; filled when `active`.
 fn option(
     commands: &mut Commands,
     ctx: &Ctx,

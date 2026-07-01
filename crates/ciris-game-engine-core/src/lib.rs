@@ -38,9 +38,9 @@ pub mod lattice;
 pub mod temperature;
 
 pub use board::{Board, CellState, Coord, Steward};
+pub use board_view::{AgentViewOpts, BoardView, CameraAngle, MeshInfo};
 pub use daily_seed::{derive_daily_seed, DailySeed, Difficulty};
 pub use dispersal::{algorithm_a, dispersal_counts, validate_layout, Dispersal, LayoutError};
-pub use board_view::{AgentViewOpts, BoardView, CameraAngle, MeshInfo};
 pub use engine::{GameState, Move, MoveError, MoveRecord, Outcome};
 
 /// Default board edge length: 5×5×5 = 125 cells (DESIGN_BRIEF §3.1).

@@ -19,7 +19,7 @@ use std::io::{self, BufRead, Write};
 use ciris_game_engine_core::{
     board::{CellState, Steward},
     engine::{GameState, Move},
-    Coord, DEFAULT_BOARD_N, ATARI_SIZE, COLLAPSE_THRESHOLD,
+    Coord, ATARI_SIZE, COLLAPSE_THRESHOLD, DEFAULT_BOARD_N,
 };
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
@@ -131,13 +131,14 @@ fn announce_events(snap: &[CellState], gs: &GameState, slot: usize) {
     let mut perma_born = 0usize;
     let mut live_born = 0usize;
 
-    for idx in 0..gs.board.len() {
-        let before = snap[idx];
+    for (idx, &before) in snap.iter().enumerate().take(gs.board.len()) {
         let after = gs.board.get(idx);
-        if before == after { continue; }
+        if before == after {
+            continue;
+        }
         match (before, after) {
             (CellState::Live(_), CellState::TempDead(_)) => collapse_size += 1,
-            (CellState::TempDead(_), CellState::Live(_))   => live_born += 1,
+            (CellState::TempDead(_), CellState::Live(_)) => live_born += 1,
             (CellState::TempDead(_), CellState::PermaDead) => perma_born += 1,
             _ => {}
         }
@@ -151,7 +152,10 @@ fn announce_events(snap: &[CellState], gs: &GameState, slot: usize) {
     if perma_born > 0 || live_born > 0 {
         println!();
         println!("  >> REBUILD complete: {live_born} cells reborn as live, {perma_born} become PermaDead");
-        println!("     Score +{perma_born} for {name}  (total: {})", gs.scores[slot]);
+        println!(
+            "     Score +{perma_born} for {name}  (total: {})",
+            gs.scores[slot]
+        );
     }
 
     // Atari warnings after this move.
@@ -198,7 +202,9 @@ fn main() {
             let outcome = gs.outcome();
             println!();
             if outcome.all_survivors {
-                println!("✦ WILD — M-1 achieved! All stewards cohabited without a single collapse.");
+                println!(
+                    "✦ WILD — M-1 achieved! All stewards cohabited without a single collapse."
+                );
             } else {
                 let min = *outcome.permadead.iter().min().unwrap();
                 let winners: Vec<&str> = outcome
@@ -208,11 +214,7 @@ fn main() {
                     .filter(|&(_, &s)| s == min)
                     .map(|(i, _)| NAMES[i])
                     .collect();
-                println!(
-                    "Winner(s): {} with {} perma-dead",
-                    winners.join(", "),
-                    min
-                );
+                println!("Winner(s): {} with {} perma-dead", winners.join(", "), min);
             }
             break;
         }

@@ -316,7 +316,12 @@ impl BoardView {
                 let atari_flag = if m.in_atari { " !ATARI" } else { "" };
                 out.push_str(&alloc::format!(
                     "    {} mesh#{} size={} temp={} ({}){}\n",
-                    name, m.id, m.size, m.temperature_float, m.temperature_word, atari_flag,
+                    name,
+                    m.id,
+                    m.size,
+                    m.temperature_float,
+                    m.temperature_word,
+                    atari_flag,
                 ));
             }
         }
