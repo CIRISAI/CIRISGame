@@ -19,7 +19,6 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::camera::{Hdr, RenderTarget, Viewport};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::image::Image;
-use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 use bevy::window::PrimaryWindow;
@@ -322,11 +321,6 @@ fn setup(
         // BOTH cameras are Hdr + Msaa::Off, consistently, in every state.
         Msaa::Off,
         Tonemapping::AgX,
-        Bloom {
-            intensity: 0.18,
-            composite_mode: BloomCompositeMode::EnergyConserving,
-            ..default()
-        },
         PanOrbitCamera {
             radius: Some(1.8 * n as f32),
             // Start at 45° yaw so we look BETWEEN two steward signets (which sit
