@@ -174,6 +174,13 @@ pub fn run_app() {
     .init_resource::<crate::agent::PendingAgentTask>()
     .init_resource::<effects::CoreScale>()
     .init_resource::<endgame::Ending>()
+    // Reset to a fresh board every time Playing is entered (wizard Start button
+    // or Escape shortcut). Without this the screensaver's in-progress board
+    // carries over into the real game.
+    .add_systems(
+        OnEnter(AppScreen::Playing),
+        screensaver::reset_on_enter_playing,
+    )
     .add_systems(Startup, setup)
     .add_systems(
         Update,
@@ -326,7 +333,7 @@ fn setup(
         Msaa::Off,
         Tonemapping::AgX,
         PanOrbitCamera {
-            radius: Some(1.8 * n as f32),
+            radius: Some(2.484 * n as f32), // 1.8 × 1.15 × 1.20 = +38% total
             // Start at 45° yaw so we look BETWEEN two steward signets (which sit
             // on the cardinal axes), plus a gentle downward tilt.
             yaw: Some(std::f32::consts::FRAC_PI_4),

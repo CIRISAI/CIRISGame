@@ -85,6 +85,7 @@ fn position_tendrils(
     time: Res<Time>,
     board: Res<BoardResource>,
     peer: Res<PeerDistance>,
+    blend: Res<crate::topology::TopoBlend>,
     hovered: Res<HoveredCell>,
     mut q: Query<(&mut TendrilEdge, &mut Transform, &mut Visibility)>,
 ) {
@@ -108,8 +109,8 @@ fn position_tendrils(
             }
             continue;
         }
-        let ea = cell_pos(board.0.board.coord(edge.a), n) * peer.0;
-        let eb = cell_pos(board.0.board.coord(edge.b), n) * peer.0;
+        let ea = cell_pos(board.0.board.coord(edge.a), n, blend.0) * peer.0;
+        let eb = cell_pos(board.0.board.coord(edge.b), n, blend.0) * peer.0;
         let dir = eb - ea;
         let len = dir.length().max(1.0e-4);
         tf.translation = (ea + eb) * 0.5;

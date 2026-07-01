@@ -66,7 +66,7 @@ impl ScreensaverState {
 
 /// Deterministic AI RNG, distinct from the game's own internal dispersal RNG.
 #[derive(Resource)]
-pub struct AiRng(pub ChaCha8Rng);
+pub(crate) struct AiRng(pub ChaCha8Rng);
 
 impl AiRng {
     pub fn new(round: u64) -> Self {
@@ -80,6 +80,23 @@ fn ai_seed(round: u64) -> [u8; 32] {
     let mut seed = seed_from_counter(round);
     seed[31] = 0xA5;
     seed
+}
+
+/// Reset the board to a fresh game when the player transitions to Playing.
+/// Handles both the wizard "Start" button and the Escape shortcut; without this
+/// the screensaver's in-progress board carries over into the real game.
+pub(crate) fn reset_on_enter_playing(
+    mut board: ResMut<crate::BoardResource>,
+    mut state: ResMut<ScreensaverState>,
+    mut rng: ResMut<AiRng>,
+    mut dirty: ResMut<crate::render::BoardDirty>,
+) {
+    state.round += 1;
+    state.holding = false;
+    state.step.reset();
+    board.0 = GameState::new(DEFAULT_BOARD_N, seed_from_counter(state.round));
+    rng.0 = ChaCha8Rng::from_seed(ai_seed(state.round));
+    dirty.0 = true;
 }
 
 /// The screensaver step system (`Update`). Ticks the timers, applies one move

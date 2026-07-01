@@ -21,39 +21,40 @@ use fluent::concurrent::FluentBundle;
 use fluent::{FluentArgs, FluentResource};
 use unic_langid::LanguageIdentifier;
 
-/// The 29 CIRIS languages, in selector order: BCP-47 code + the language's own
-/// endonym (kept in code, not in `.ftl`, because a language's *name for itself*
-/// is identity, not translatable copy). `en` is index 0 and the fallback.
-pub const LANGS: [(&str, &str); 29] = [
-    ("en", "English"),
-    ("am", "አማርኛ"),
-    ("ar", "العربية"),
-    ("bn", "বাংলা"),
-    ("de", "Deutsch"),
-    ("es", "Español"),
-    ("fa", "فارسی"),
-    ("fr", "Français"),
-    ("ha", "Hausa"),
-    ("hi", "हिन्दी"),
-    ("id", "Bahasa Indonesia"),
-    ("it", "Italiano"),
-    ("ja", "日本語"),
-    ("ko", "한국어"),
-    ("mr", "मराठी"),
-    ("my", "မြန်မာ"),
-    ("pa", "ਪੰਜਾਬੀ"),
-    ("pt", "Português"),
-    ("ru", "Русский"),
-    ("sw", "Kiswahili"),
-    ("ta", "தமிழ்"),
-    ("te", "తెలుగు"),
-    ("th", "ไทย"),
-    ("tr", "Türkçe"),
-    ("uk", "Українська"),
-    ("ur", "اردو"),
-    ("vi", "Tiếng Việt"),
-    ("yo", "Yorùbá"),
-    ("zh", "中文"),
+/// The 29 CIRIS languages, in selector order.
+/// Fields: (BCP-47 code, endonym in native script, English display name).
+/// The wizard uses the English name because Inter.ttf has no CJK/Arabic/
+/// Devanagari/Brahmic coverage; the endonym is kept for future font expansion.
+pub const LANGS: [(&str, &str, &str); 29] = [
+    ("en", "English",        "English"),
+    ("am", "አማርኛ",          "Amharic"),
+    ("ar", "العربية",        "Arabic"),
+    ("bn", "বাংলা",          "Bengali"),
+    ("de", "Deutsch",        "German"),
+    ("es", "Español",        "Spanish"),
+    ("fa", "فارسی",          "Persian"),
+    ("fr", "Français",       "French"),
+    ("ha", "Hausa",          "Hausa"),
+    ("hi", "हिन्दी",          "Hindi"),
+    ("id", "Bahasa Indonesia","Indonesian"),
+    ("it", "Italiano",       "Italian"),
+    ("ja", "日本語",          "Japanese"),
+    ("ko", "한국어",          "Korean"),
+    ("mr", "मराठी",          "Marathi"),
+    ("my", "မြန်မာ",         "Burmese"),
+    ("pa", "ਪੰਜਾਬੀ",         "Punjabi"),
+    ("pt", "Português",      "Portuguese"),
+    ("ru", "Русский",        "Russian"),
+    ("sw", "Kiswahili",      "Swahili"),
+    ("ta", "தமிழ்",          "Tamil"),
+    ("te", "తెలుగు",         "Telugu"),
+    ("th", "ไทย",            "Thai"),
+    ("tr", "Türkçe",         "Turkish"),
+    ("uk", "Українська",     "Ukrainian"),
+    ("ur", "اردو",           "Urdu"),
+    ("vi", "Tiếng Việt",     "Vietnamese"),
+    ("yo", "Yorùbá",         "Yoruba"),
+    ("zh", "中文",           "Chinese"),
 ];
 
 /// Index of the English bundle — the universal fallback.
@@ -184,7 +185,7 @@ impl Localization {
     pub fn t(&self, key: &str) -> String {
         self.format_in(self.current, key, None)
             .or_else(|| self.format_in(FALLBACK, key, None))
-            .unwrap_or_else(|| format!("⟨{key}⟩"))
+            .unwrap_or_else(|| format!("[{key}]"))
     }
 
     /// Look up `key` with `{ $name }` substitutions, e.g.
@@ -196,7 +197,7 @@ impl Localization {
         }
         self.format_in(self.current, key, Some(&fluent_args))
             .or_else(|| self.format_in(FALLBACK, key, Some(&fluent_args)))
-            .unwrap_or_else(|| format!("⟨{key}⟩"))
+            .unwrap_or_else(|| format!("[{key}]"))
     }
 
     /// Resolve `key` in bundle `index`, returning `None` if the bundle lacks the

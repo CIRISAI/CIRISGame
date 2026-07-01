@@ -18,9 +18,10 @@ use crate::topology::LayerSlicer;
 use crate::BoardResource;
 
 /// Perpendicular ray-distance (world units) within which a cell counts as
-/// "under" the cursor. Cells sit 1 unit apart, so a hair over a half-cell
-/// tiles the lattice without gaps or double-claims.
-const PICK_RADIUS: f32 = 0.55;
+/// "under" the cursor.  With the pincushion layout the minimum XZ spacing is
+/// 0.9 × peer_distance; 0.42 keeps picks unambiguous at the compressed outer
+/// layers while staying generous at the expanded centre.
+const PICK_RADIUS: f32 = 0.42;
 /// Smoothing time constant (s) for the focus position + strength. Small =
 /// snappy follow; large = lazy glide. 0.10 s reads as "responsive but smooth".
 const TAU: f32 = 0.10;
@@ -102,6 +103,7 @@ fn update_hover(
     select_glow: Res<SelectGlow>,
     peer: Res<crate::topology::PeerDistance>,
     slicer: Res<LayerSlicer>,
+    blend: Res<crate::topology::TopoBlend>,
     touches: Res<Touches>,
     mut hovered: ResMut<HoveredCell>,
     mut orbs: ResMut<Assets<OrbMaterial>>,
@@ -125,7 +127,7 @@ fn update_hover(
         let mut best: Option<(f32, usize, Vec3)> = None; // (t along ray, idx, center)
         for idx in 0..board.0.board.len() {
             let coord = board.0.board.coord(idx);
-            let mut center = crate::topology::cell_pos(coord, n) * peer.0;
+            let mut center = crate::topology::cell_pos(coord, n, blend.0) * peer.0;
             // Account for the layer slicer lift so hover tracks visual positions.
             center.y += crate::topology::lift_y(coord.j, n, slicer.anim) * peer.0;
             let t = (center - ray.origin).dot(dir);
@@ -140,18 +142,15 @@ fn update_hover(
         best.map(|(_, idx, c)| (idx, c))
     })();
 
-    // Any cell under the cursor (for the tendril hover hint), even occupied ones.
-    hovered.0 = picked.map(|(idx, _)| idx);
-
-    // Limit the glow cue to valid placements: only empty cells are legal on the
-    // simple-cubic lattice (no crossing rule), so this filter rejects occupied /
-    // dead cells.
-    let target: Option<Vec3> = picked
-        .filter(|(idx, _)| {
-            let coord = board.0.board.coord(*idx);
-            board.0.current_legal_moves().contains(&coord)
-        })
-        .map(|(_, c)| c);
+    // Restrict hover to legal placements only — empty cells the current steward
+    // can actually place on. Glow and tendrils must not light up stones owned
+    // by other stewards or dead cells.
+    let legal_picked = picked.filter(|(idx, _)| {
+        let coord = board.0.board.coord(*idx);
+        board.0.current_legal_moves().contains(&coord)
+    });
+    hovered.0 = legal_picked.map(|(idx, _)| idx);
+    let target: Option<Vec3> = legal_picked.map(|(_, c)| c);
 
     // Exponential smoothing toward the target (or toward "off" when none).
     let k = (1.0 - (-time.delta_secs() / TAU).exp()).clamp(0.0, 1.0);

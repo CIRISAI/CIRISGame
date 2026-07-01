@@ -12,7 +12,7 @@ rule-line-3 = Same seed for everyone today.
 rule-line-4 = Lowest perma-dead wins.
 
 ## Legend / thinking (verb is shown in Verdigris italic)
-steward-status = { $pigment } · { $verb }
+steward-status = { $pigment } - { $verb }
 verb-thinking = thinking
 verb-weighing = weighing
 verb-reading = reading
@@ -29,16 +29,16 @@ aria-placed = { $pigment } placed a stone.
 aria-board-minimap = Board minimap revealed. Twist or Shift plus Arrow to rotate.
 
 ## End screen
-end-subline = Game { $game } · { $turns } turns · { $time }
+end-subline = Game { $game } - { $turns } turns - { $time }
 end-federation-held = The federation held.
 end-new-game = New game
 
 ## Daily seed
-daily-today = Today — { $date }
+daily-today = Today - { $date }
 daily-play = Play today
 daily-scars = today: { $count } substrate scars
 daily-next = next puzzle in { $time }
-daily-ribbon = today: { $plays } plays — { $survivors } reached all-survivors
+daily-ribbon = today: { $plays } plays - { $survivors } reached all-survivors
 
 ## Submit states (no accusation, ever)
 submit-button = Submit today's score
@@ -53,7 +53,7 @@ replay-saved = Replay saved.
 replay-shared = Replay saved. Receipt copied.
 
 ## Sound
-sound-welcome = Sound off — tap to enable.
+sound-welcome = Sound off - tap to enable.
 
 ## Intro — click-through that teaches the one rule (§8.3 first-visit panel)
 intro-tagline = Collapse is generative, not the end.

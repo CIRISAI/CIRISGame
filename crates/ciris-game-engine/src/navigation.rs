@@ -119,6 +119,7 @@ fn fly_through(
     mut touch_pinch: ResMut<TouchPinch>,
     mut nav: ResMut<NavState>,
     mut cam: Query<(&mut PanOrbitCamera, &Transform), With<crate::render::MainCam>>,
+    ui_buttons: Query<&Interaction, With<Button>>,
 ) {
     let dt = time.delta_secs();
     if dt <= 0.0 {
@@ -177,8 +178,14 @@ fn fly_through(
     let Ok((mut orbit, transform)) = cam.single_mut() else {
         return;
     };
-    // Suppress panorbit's own orbit/pan only while both buttons drive the dolly.
-    orbit.enabled = !dual;
+    // Disable panorbit while any UI button is held (e.g. slider drag) so the
+    // mouse motion isn't interpreted as an orbit at the same time.
+    let ui_pressed = ui_buttons
+        .iter()
+        .any(|i| *i == Interaction::Pressed);
+    // Suppress panorbit's own orbit/pan while both buttons drive the dolly OR
+    // while a UI element is being dragged.
+    orbit.enabled = !dual && !ui_pressed;
 
     // Drive the desired velocity from input, clamp to the speed cap, then let it
     // coast back to rest when no new input arrives this frame.

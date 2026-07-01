@@ -13,10 +13,12 @@ use crate::hover::HoveredCell;
 use crate::palette;
 use crate::render::BoardDirty;
 use crate::state::{AppScreen, PlayerKind, RosterConfig};
+use crate::ui_theme;
 use crate::BoardResource;
 
-/// Locked pigment names in steward-slot order (CLAUDE.md).
-const STEWARD_NAMES: [&str; 4] = ["Sienna", "Lapis", "Verdigris", "Kaolin"];
+/// Short color words used in the playing HUD (the pigment names Sienna/Lapis/
+/// Verdigris/Kaolin are the canonical identifiers; these are display aliases).
+const STEWARD_NAMES: [&str; 4] = ["Red", "Blue", "Green", "White"];
 
 pub(crate) fn plugin(app: &mut App) {
     app.add_systems(OnEnter(AppScreen::Playing), spawn_turn_hud)
@@ -121,10 +123,7 @@ fn spawn_turn_hud(mut commands: Commands) {
     commands.spawn((
         TurnText,
         Text::new(""),
-        TextFont {
-            font_size: FontSize::Px(13.0),
-            ..default()
-        },
+        ui_theme::font(ui_theme::DISPLAY, ui_theme::SIZE_SM, FontWeight::NORMAL),
         TextColor(palette::BONE_SRGB),
         ChildOf(root),
     ));
@@ -148,7 +147,7 @@ fn update_turn_hud(
     let color = palette::STEWARD_SRGB[slot];
     let name = STEWARD_NAMES[slot];
     let is_human = roster.slots[slot].kind == PlayerKind::Human;
-    let status = if is_human { "your move" } else { "thinking…" };
+    let status = if is_human { "your move" } else { "thinking..." };
 
     if let Ok((mut bg, mut node)) = disc.single_mut() {
         bg.0 = color;
@@ -160,7 +159,7 @@ fn update_turn_hud(
         };
     }
     if let Ok((mut text, mut tc)) = label.single_mut() {
-        *text = Text::new(format!("{name} — {status}"));
+        *text = Text::new(format!("{name} - {status}"));
         tc.0 = if is_human {
             palette::BONE_SRGB
         } else {

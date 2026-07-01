@@ -31,9 +31,8 @@ use crate::ui_theme as theme;
 /// Number of wizard steps.
 const STEPS: usize = 3;
 
-/// Steward pigment names, in slot order. Locked brand constants — never
-/// translated (CLAUDE.md), so they live here rather than in the `.ftl` files.
-const STEWARD_NAMES: [&str; 4] = ["Sienna", "Lapis", "Verdigris", "Kaolin"];
+/// Short color names for the steward seats in the wizard and HUD.
+const STEWARD_NAMES: [&str; 4] = ["Red", "Blue", "Green", "White"];
 
 /// Which wizard step is showing (`0..STEPS`). Mutating it triggers a rebuild.
 #[derive(Resource)]
@@ -634,13 +633,13 @@ fn build_language(commands: &mut Commands, ctx: &Ctx, body: Entity) {
         },
     );
     let current = ctx.i18n.current_index();
-    for (index, (_code, endonym)) in LANGS.iter().enumerate() {
+    for (index, (_code, _endonym, english)) in LANGS.iter().enumerate() {
         option(
             commands,
             ctx,
             grid,
             WizAction::SetLang(index),
-            (*endonym).to_string(),
+            (*english).to_string(),
             index == current,
         );
     }

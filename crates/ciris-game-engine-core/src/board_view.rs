@@ -16,7 +16,7 @@ use crate::{ATARI_SIZE, COLLAPSE_THRESHOLD, STEWARD_COUNT};
 
 // ── constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_NAMES: [&str; 4] = ["Sky", "Rose", "Mint", "Sun"];
+const DEFAULT_NAMES: [&str; 4] = ["Red", "Blue", "Green", "White"];
 const PIGMENTS: [&str; 4] = ["#D97757", "#6A9BCC", "#788C5D", "#E8E6DC"];
 
 // ── sub-types ────────────────────────────────────────────────────────────────
@@ -277,7 +277,7 @@ impl BoardView {
         }
 
         let mut out = String::new();
-        let steward_names = ["Sienna", "Lapis", "Verdigris", "Kaolin"];
+        let steward_names = ["Red", "Blue", "Green", "White"];
         let cur = self.current_slot as usize;
         out.push_str(&alloc::format!(
             "Turn {} — {}'s move  scores: S={} L={} V={} K={}\n",
@@ -313,7 +313,7 @@ impl BoardView {
             out.push_str("  Meshes:\n");
             for m in &self.meshes {
                 let name = steward_names[m.slot_id as usize];
-                let atari_flag = if m.in_atari { " ⚠ATARI" } else { "" };
+                let atari_flag = if m.in_atari { " !ATARI" } else { "" };
                 out.push_str(&alloc::format!(
                     "    {} mesh#{} size={} temp={} ({}){}\n",
                     name, m.id, m.size, m.temperature_float, m.temperature_word, atari_flag,
